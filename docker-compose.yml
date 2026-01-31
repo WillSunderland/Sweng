@@ -1,0 +1,38 @@
+version: '3.8'
+
+services:
+  # 1. The Orchestrator (LangGraph + API)
+  orchestrator:
+    build: ./backend/orchestrator
+    ports:
+      - "8000:8000"
+    environment:
+      - NVIDIA_API_KEY=${NVIDIA_API_KEY}
+      - MCP_SERVER_URL=http://mcp-server:8001
+    depends_on:
+      - mcp-server
+
+  # 2. The MCP Server (Tools + ElasticSearch Client)
+  mcp-server:
+    build: ./backend/mcp_server
+    ports:
+      - "8001:8001"
+    environment:
+      - ELASTICSEARCH_URL=${ELASTICSEARCH_URL}
+
+  # 3. The Frontend (React UI)
+  frontend:
+    build: ./frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - orchestrator
+
+  # 4. ElasticSearch (Local dev instance)
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.11.1
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+    ports:
+      - "9200:9200"
