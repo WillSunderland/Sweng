@@ -1,4 +1,4 @@
-from typing import TypedDict, Annotated, Sequence
+from typing import TypedDict, Annotated, Sequence, List
 from langgraph.graph import StateGraph, END
 
 class AgentState(TypedDict):
