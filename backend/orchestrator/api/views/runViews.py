@@ -1,0 +1,151 @@
+import uuid
+from datetime import datetime, timezone
+
+from rest_framework.decorators import api_view
+from rest_framework.response import Response
+from rest_framework import status
+
+from api.schemas.runSchemas import CreateRunRequestserialiser
+from api.errors.errorMapping import invalidRequestError, runNotFoundError, sourceNotFoundError
+from api.constants.runConstants import (
+    RUN_STATUS_RUNNING,
+    RUN_STATUS_COMPLETED,
+    DEFAULT_TRUST_SCORE,
+    DEFAULT_CARBON_G,
+)
+
+# in-memory stores for stubbed API responses
+# to be replaced with LangGraph output
+RUN_STORE = {}
+SOURCE_STORE = {}
+
+
+def getIsoTimestamp():
+    return datetime.now(timezone.utc).isoformat()
+
+
+
+@api_view(["POST"])
+def createRun(request):
+    serialiser = CreateRunRequestserialiser(data=request.data)
+
+    if not serialiser.is_valid():
+        return Response(
+            invalidRequestError(serialiser.errors), 
+            status=status.HTTP_400_BAD_REQUEST,
+            )
+    runId = f"run_{uuid.uuid4().hex[:12]}"
+    createdAt = getIsoTimestamp()
+
+    RUN_STORE[runId] = {
+        "query": serialiser.validated_data["query"],
+        "createdAt": createdAt,
+        }
+
+    # stub to prevent broken citation links in FE
+    SOURCE_STORE["src_001"] = {
+        "sourceId": "src_001",
+        "title": "Placeholder Source",
+        "fullText": "Lorem Ipsum Source content.",
+    }
+
+    return Response(
+        {
+            "runId": runId,
+            "status": RUN_STATUS_RUNNING,
+            "createdAt": createdAt,
+        },
+        status=status.HTTP_201_CREATED,
+    )
+
+@api_view(["GET"])
+def listRuns(request):
+    items = []
+    for runId, run in RUN_STORE.items():
+        items.append(
+            {
+                "runId": runId,
+                "title": "Placeholder Analysis",
+                "updatedAt": run["createdAt"],
+            }
+        )
+
+    return Response({"items": items}, status=status.HTTP_200_OK)
+
+
+@api_view(["GET"])
+def getRun(request, runId):
+    run = RUN_STORE.get(runId)
+    if not run:
+        return Response(runNotFoundError(runId), status=status.HTTP_404_NOT_FOUND)
+
+    responseBody = {
+        "runId": runId,
+        "status": RUN_STATUS_COMPLETED,
+        "title": "Placeholder Legal Analysis",
+        "lastUpdatedAt": run["createdAt"],
+        "keyFinding": {
+            "summary": "Lorem ipsum placeholder key finding.",
+            "impactLevel": "high",
+            "actionRequired": True,
+        },
+        "statutoryBasis": {
+            "analysis": [
+                {
+                    "text": "Lorem ipsum statutory analysis paragraph.",
+                    "citations": ["src_001"],
+                }
+            ]
+        },
+        "precedents": [
+            {
+                "caseName": "Placeholder Case",
+                "court": "High Court",
+                "year": 2024,
+                "authority": "persuasive",
+                "timesCited": 0,
+                "summary": "Lorem ipsum case summary.",
+            }
+        ],
+        "agentCommentary": {
+            "aiGenerated": True,
+            "content": "Lorem ipsum agent commentary.",
+            "suggestedActions": [
+                {"label": "Placeholder action", "actionId": "placeholderAction"}
+            ],
+        },
+        "reasoningPath": {
+            "engine": "langgraph",
+            "steps": [
+                {
+                    "stepId": "semanticSearch",
+                    "label": "Semantic Search",
+                    "status": "completed",
+                },
+                {
+                    "stepId": "summarization",
+                    "label": "Summarization",
+                    "status": "completed",
+                },
+            ],
+            "trustScore": DEFAULT_TRUST_SCORE,
+            "carbonTotalG": DEFAULT_CARBON_G,
+        },
+        "references": {
+            "sourceIds": ["src_001"],
+        },
+    }
+
+    return Response(responseBody, status=status.HTTP_200_OK)
+
+
+@api_view(["GET"])
+def getSource(request, sourceId):
+    source = SOURCE_STORE.get(sourceId)
+    if not source:
+        return Response(
+            sourceNotFoundError(sourceId),
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    return Response(source, status=status.HTTP_200_OK)
