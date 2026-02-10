@@ -20,6 +20,9 @@ in front end for the interface
 
 ## Files in this folder
 
+## __init__.py
+This marks this folder as a package
+
 ### 'schemas.py'
 This file defines the data models for the Natural Language Querying using the Pydantic Component
 It has 3 main functions in it
