@@ -49,7 +49,7 @@ NLQueryService accepts a natural language query, forwards it to the orchestrator
 a structured JSON result
 1) NLQueryService(request: NLQueryRequest) -> NLQueryResult
    - Logs an incoming Query 
-   - Calls the orchestrator to retreive the relevant documents
+   - Calls the orchestrator to retrieve the relevant documents
    - Returns an NLQueryResult containing the query and the top_k results
    - Handles exceptions and returns an empty result on failure
 This file acts as an interface between user queries and the orchestration layer
