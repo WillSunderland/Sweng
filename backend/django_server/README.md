@@ -1,3 +1,35 @@
+how to create an api end point:
+1) add endpoint to urls.py in api folder.
+2) work with your end point in views.py inside api folder
+
+dont forget this:
+The URL pattern inside this app.
+Since we included the app under path("api/", include("api.urls")), the full URL becomes:
+ex: /api/ + health/ → /api/health/
+
+!!! you dont have to change urls.py in config folder.
+
+
+------------------------------------------------------------------------------------------------
+
+
+how to run to test:
+
+From backend/django_server/:
+
+python manage.py runserver
+
+
+Then open:
+
+example:
+http://127.0.0.1:8000/api/health/
+
+If that returns {"status":"ok"}, you’re done. (it returns so its fine)
+
+
+
+
 can put this into docker-compose.yml:
 
 version: "3.8"
