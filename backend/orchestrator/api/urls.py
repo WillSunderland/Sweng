@@ -1,11 +1,11 @@
 from django.urls import path
 
-from api.views.runViews import {
+from api.views.runViews import (
     createRun,
     listRuns,
     getRun,
     getSource,
-}
+)
 
 urlpatterns = [
     # Runs
