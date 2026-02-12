@@ -9,10 +9,9 @@ from api.views.runViews import (
 
 urlpatterns = [
     # Runs
-    path("runs", createRun, name="create_run"), # POST
-    path("runs", listRuns, name="list_runs"), # GET
-    path("runs/<str:runId>", getRun, name="get_run"), # GET
-
+    path("runs", createRun, name="create_run"),  # POST
+    path("runs", listRuns, name="list_runs"),  # GET
+    path("runs/<str:runId>", getRun, name="get_run"),  # GET
     # Sources
-    path("sources/<str:sourceId>", getSource, name="get_source"), # GET
+    path("sources/<str:sourceId>", getSource, name="get_source"),  # GET
 ]

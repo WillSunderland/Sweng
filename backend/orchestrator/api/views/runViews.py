@@ -6,7 +6,11 @@ from rest_framework.response import Response
 from rest_framework import status
 
 from api.schemas.runSchemas import CreateRunRequestserialiser
-from api.errors.errorMapping import invalidRequestError, runNotFoundError, sourceNotFoundError
+from api.errors.errorMapping import (
+    invalidRequestError,
+    runNotFoundError,
+    sourceNotFoundError,
+)
 from api.constants.runConstants import (
     RUN_STATUS_RUNNING,
     RUN_STATUS_COMPLETED,
@@ -24,23 +28,22 @@ def getIsoTimestamp():
     return datetime.now(timezone.utc).isoformat()
 
 
-
 @api_view(["POST"])
 def createRun(request):
     serialiser = CreateRunRequestserialiser(data=request.data)
 
     if not serialiser.is_valid():
         return Response(
-            invalidRequestError(serialiser.errors), 
+            invalidRequestError(serialiser.errors),
             status=status.HTTP_400_BAD_REQUEST,
-            )
+        )
     runId = f"run_{uuid.uuid4().hex[:12]}"
     createdAt = getIsoTimestamp()
 
     RUN_STORE[runId] = {
         "query": serialiser.validated_data["query"],
         "createdAt": createdAt,
-        }
+    }
 
     # stub to prevent broken citation links in FE
     SOURCE_STORE["src_001"] = {
@@ -57,6 +60,7 @@ def createRun(request):
         },
         status=status.HTTP_201_CREATED,
     )
+
 
 @api_view(["GET"])
 def listRuns(request):
