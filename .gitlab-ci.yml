@@ -1,0 +1,47 @@
+stages:
+  - lint
+  - build
+
+# ---- Lint Stage ----
+
+backend-lint:
+  stage: lint
+  image: python:3.11-slim
+  tags:
+    - docker
+  script:
+    - pip install black
+    - black --check backend/
+
+frontend-lint:
+  stage: lint
+  image: node:20-alpine
+  tags:
+    - docker
+  before_script:
+    - cd frontend
+    - npm ci
+  script:
+    - npm run lint
+
+# ---- Build Stage ----
+
+backend-build:
+  stage: build
+  image: python:3.11-slim
+  tags:
+    - docker
+  script:
+    - pip install -r backend/orchestrator/requirements.txt
+    - pip install -r backend/mcp_server/requirements.txt
+
+frontend-build:
+  stage: build
+  image: node:20-alpine
+  tags:
+    - docker
+  before_script:
+    - cd frontend
+    - npm ci
+  script:
+    - npm run build

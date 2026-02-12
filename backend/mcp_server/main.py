@@ -6,21 +6,25 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("mcp-server")
 
 # Initialize the MCP Server
-mcp = FastMCP(name = "Propylon-Legislative-Research",
-              instructions=("This MCP server provides AI-assisted legislative research tools, "
-                            "retrieving an summarising relevant legal documents."),
-              )
+mcp = FastMCP(
+    name="Propylon-Legislative-Research",
+    instructions=(
+        "This MCP server provides AI-assisted legislative research tools, "
+        "retrieving an summarising relevant legal documents."
+    ),
+)
 
 DUMMY_DOCS = [
     {
         "title": "Planning and Development Act 2000",
-        "summary": "Core legalisation regarding planning in Ireland"
+        "summary": "Core legalisation regarding planning in Ireland",
     },
     {
         "title": "Housing (Regulation of Approved Housing Bodies) Act 2019",
         "summary": "Regulates approved housing bodies.",
     },
 ]
+
 
 @mcp.tool()
 def search_elasticsearch(query: str, top_k: int = 5) -> List[Dict[str, str]]:
@@ -41,6 +45,7 @@ def search_elasticsearch(query: str, top_k: int = 5) -> List[Dict[str, str]]:
         logger.error("Search failed: %s", e)
         return []
 
+
 def main():
     logger.info("Starting MCP Server: Propylon Legislative Research")
     try:
@@ -48,6 +53,6 @@ def main():
     except KeyboardInterrupt:
         logger.info("MCP Server stopped by user")
 
+
 if __name__ == "__main__":
     main()
-
