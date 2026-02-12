@@ -1,11 +1,6 @@
 from django.urls import path
 
-from api.views.runViews import {
-    createRun,
-    listRuns,
-    getRun,
-    getSource,
-}
+from orchestrator.api.views.runViews import createRun, listRuns, getRun, getSource
 
 urlpatterns = [
     # Runs
