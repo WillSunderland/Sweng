@@ -102,3 +102,25 @@ INDEX_NAME=legislation_chunks
 LEGISCAN_API_KEY=YOUR_KEY_HERE
 SEARCH_QUERY=privacy
 SEARCH_LIMIT=10
+
+
+
+what can be add to docker-compose.yml:
+
+ingestion:
+  build:
+    context: .
+    dockerfile: backend/ingestion/Dockerfile
+  environment:
+    - LEGISCAN_API_KEY=${LEGISCAN_API_KEY}
+    - SEARCH_BACKEND=elasticsearch
+    - ELASTICSEARCH_URL=http://elasticsearch:9200
+    - INDEX_NAME=legislation_chunks
+    - EMBED_MODEL=all-MiniLM-L6-v2
+    - SEARCH_QUERY=privacy
+    - SEARCH_LIMIT=3
+  depends_on:
+    - elasticsearch
+
+
+
