@@ -12,7 +12,7 @@ logger = logging.getLogger("mcp-server")
 # Initialize the MCP Server
 mcp = FastMCP(name = "Propylon-Legislative-Research",
               instructions=("This MCP server provides AI-assisted legislative research tools, "
-                            "retrieving an summarising relevant legal documents."),
+                            "retrieving and summarising relevant legal documents."),
               )
 
 # Create ONE retriever instance (caches ES connection + embedding model)
@@ -33,7 +33,8 @@ def search_elasticsearch(query: str, top_k: int = 5, state: str = "TX") -> dict:
         "query": "...",
         "top_k": 5,
         "results": [
-          {"doc_id": "...", "score": ..., "bill_id": "...", "title": "...", "chunk_id": 0, "text": "..."}
+          {"doc_id": "...", "score": ..., "bill_id": "...", "title": "...", "policy_area": "...", 
+          "bill_type": "...", "bill_number": "...", "latest_action": "...", "chunk_id": 0, "text": "..."}
         ]
       }
     """
