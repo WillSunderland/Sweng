@@ -55,26 +55,17 @@ class CongressClient:
     # ------------------------------------------------------------------
     # 1) Get members from a specific state
     # ------------------------------------------------------------------
-    def get_state_members(self, state_code="TX", limit=250):
+    def get_state_members(self, state_code="TX", congress=118, limit=250):
         """
-        Fetch all current congress members for a given state.
+        Fetch congress members for a given state and congress.
 
-        Endpoint: /v3/member?stateCode=TX&limit=250
-
-        Returns list of member dicts, each containing:
-          - bioguideId
-          - name
-          - state
-          - district
-          - party
-          - terms (list)
+        Endpoint: GET /v3/member/congress/{congress}/{stateCode}
         """
         members = []
         offset = 0
 
         while True:
-            data = self._get("/member", params={
-                "stateCode": state_code,
+            data = self._get(f"/member/congress/{congress}/{state_code}", params={
                 "limit": limit,
                 "offset": offset,
             })
@@ -85,7 +76,6 @@ class CongressClient:
 
             members.extend(batch)
 
-            # Check if there are more pages
             pagination = data.get("pagination", {})
             if pagination.get("next"):
                 offset += limit

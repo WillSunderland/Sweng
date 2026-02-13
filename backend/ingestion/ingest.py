@@ -74,7 +74,7 @@ def discover_tx_bills(client, state_code, congress_number, limit):
     Discover bills sponsored by members from the given state.
     """
     print(f"Fetching {state_code} members from Congress.gov...")
-    members = client.get_state_members(state_code)
+    members = client.get_state_members(state_code, congress=int(congress_number))
     print(f"Found {len(members)} members for {state_code}")
 
     if members:
@@ -107,7 +107,10 @@ def discover_tx_bills(client, state_code, congress_number, limit):
                 break
 
             congress = bill.get("congress", "")
-            bill_type = bill.get("type", "").lower()
+            bill_type = (bill.get("type") or "").lower()
+            bill_number = str(bill.get("number", ""))
+            if not bill_type or not bill_number:
+                continue
             bill_number = bill.get("number", "")
 
             if str(congress) != str(congress_number):
