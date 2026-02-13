@@ -2,78 +2,137 @@
 import json
 
 from backend.ingestion.config import get_settings
-from backend.ingestion.legiscan_client import LegiScanClient
+import re
+from backend.ingestion.congress_client import CongressClient
 from backend.ingestion.chunking import make_chunks
 from backend.ingestion.embeddings import Embedder
 from backend.ingestion.search_store import SearchStore
 
 
-def extract_text_from_legiscan_json(data, fallback_bill_id=""):
+def strip_html(text):
+    """Remove HTML tags from summary text returned by Congress.gov API."""
+    if not text:
+        return ""
+    return re.sub(r"<[^>]+>", "", text).strip()
+
+
+def extract_text_from_congress_bill(bill_detail, summaries, state_code="TX"):
     """
-    Convert a LegiScan "getBill" JSON response into:
-      - meta: bill metadata (bill_id, state, session, title)
+    Convert Congress.gov bill detail + summaries into:
+      - meta: bill metadata
       - text: searchable text for chunking + embeddings
-
-    Sprint 1 (MVP):
-      text = title + "\\n" + (description or summary)
-
-    Later improvements:
-      - add full bill text if available in response
-      - add more metadata fields for filtering
     """
-    bill = data.get("bill", {}) if isinstance(data, dict) else {}
+    congress = bill_detail.get("congress", "")
+    bill_type = bill_detail.get("type", "").lower()
+    bill_number = bill_detail.get("number", "")
+    title = bill_detail.get("title", "")
 
-    bill_id = bill.get("bill_id") or bill.get("id") or fallback_bill_id
-    title = bill.get("title", "")
-    description = bill.get("description", "") or bill.get("summary", "")
+    bill_id = f"{congress}-{bill_type}-{bill_number}"
+
+    policy_area = ""
+    pa = bill_detail.get("policyArea")
+    if pa and isinstance(pa, dict):
+        policy_area = pa.get("name", "")
+
+    latest_action = ""
+    la = bill_detail.get("latestAction")
+    if la and isinstance(la, dict):
+        latest_action = la.get("text", "")
 
     meta = {
         "bill_id": str(bill_id),
-        "state": str(bill.get("state", "")),
-        "session": str(bill.get("session", "")),
+        "state": str(state_code),
+        "session": str(congress),
         "title": str(title),
+        "policy_area": str(policy_area),
+        "bill_type": str(bill_type).upper(),
+        "bill_number": str(bill_number),
+        "latest_action": str(latest_action),
     }
 
-    text = (str(title).strip() + "\n" + str(description).strip()).strip()
+    # Build searchable text: title + policy area + summaries
+    text_parts = [str(title).strip()]
+
+    if policy_area:
+        text_parts.append(f"Policy Area: {policy_area}")
+
+    for summary in summaries:
+        clean_text = strip_html(summary.get("text", ""))
+        if clean_text:
+            text_parts.append(clean_text)
+
+    # Fallback if no summaries available
+    if len(text_parts) <= 2 and latest_action:
+        text_parts.append(latest_action)
+
+    text = "\n".join(text_parts).strip()
     return meta, text
 
 
-def pick_bill_ids_via_search(legiscan, query, limit):
+def discover_tx_bills(client, state_code, congress_number, limit):
     """
-    Discover bill IDs from LegiScan search.
-
-    We call search for Texas (TX) and extract bill_id values from results.
-
-    This function also writes a sample JSON file so you can inspect the response:
-      - sample_legiscan_search.json
+    Discover bills sponsored by members from the given state.
     """
-    result = legiscan.search_tx_bills(query)
+    print(f"Fetching {state_code} members from Congress.gov...")
+    members = client.get_state_members(state_code)
+    print(f"Found {len(members)} members for {state_code}")
 
-    # Save response for debugging / confirming JSON structure
-    with open("sample_legiscan_search.json", "w", encoding="utf-8") as f:
-        json.dump(result, f, indent=2)
+    if members:
+        with open("sample_congress_members.json", "w", encoding="utf-8") as f:
+            json.dump(members[:3], f, indent=2)
 
-    bill_ids = []
+    seen_bills = set()
+    bills = []
 
-    # Common response pattern: result["searchresult"] is a list of dicts.
-    # If LegiScan changes structure, inspect sample_legiscan_search.json and adjust here.
-    search_results = result.get("searchresult", [])
-    if isinstance(search_results, list):
-        for item in search_results:
-            if not isinstance(item, dict):
+    for member in members:
+        if len(bills) >= limit:
+            break
+
+        bioguide_id = member.get("bioguideId", "")
+        member_name = member.get("name", "Unknown")
+
+        if not bioguide_id:
+            continue
+
+        print(f"  Fetching bills for {member_name} ({bioguide_id})...")
+
+        try:
+            member_bills = client.get_member_bills(bioguide_id, limit=50)
+        except Exception as e:
+            print(f"    Warning: Error fetching bills for {bioguide_id}: {e}")
+            continue
+
+        for bill in member_bills:
+            if len(bills) >= limit:
+                break
+
+            congress = bill.get("congress", "")
+            bill_type = bill.get("type", "").lower()
+            bill_number = bill.get("number", "")
+
+            if str(congress) != str(congress_number):
                 continue
-            bid = item.get("bill_id") or item.get("id")
-            if bid:
-                bill_ids.append(str(bid))
 
-    return bill_ids[:limit]
+            bill_key = f"{congress}-{bill_type}-{bill_number}"
+            if bill_key in seen_bills:
+                continue
+
+            seen_bills.add(bill_key)
+            bills.append({
+                "congress": str(congress),
+                "type": bill_type,
+                "number": str(bill_number),
+                "title": bill.get("title", ""),
+            })
+
+    return bills
 
 
 def main():
     settings = get_settings()
 
     # 1) Create clients
-    legiscan = LegiScanClient(settings["LEGISCAN_API_KEY"])
+    client = CongressClient(settings["CONGRESS_GOV_API_KEY"])
 
     store = SearchStore(
         url=settings["SEARCH_URL"],
@@ -88,37 +147,73 @@ def main():
     #    - If BILL_ID is set in env, ingest that single bill
     #    - Otherwise discover bills using TX search query
     if settings["BILL_ID"]:
-        bill_ids = [settings["BILL_ID"]]
+        # BILL_ID format: "118/hr/1234" or "118-hr-1234"
+        parts = settings["BILL_ID"].replace("-", "/").split("/")
+        if len(parts) != 3:
+            raise ValueError("BILL_ID must be in format '118/hr/1234' or '118-hr-1234'")
+        bills_to_ingest = [{
+            "congress": parts[0],
+            "type": parts[1].lower(),
+            "number": parts[2],
+            "title": "",
+        }]
     else:
-        bill_ids = pick_bill_ids_via_search(
-            legiscan,
-            settings["SEARCH_QUERY"],
-            settings["SEARCH_LIMIT"],
+        bills_to_ingest = discover_tx_bills(
+            client,
+            state_code=settings["STATE_CODE"],
+            congress_number=settings["CONGRESS_NUMBER"],
+            limit=settings["SEARCH_LIMIT"],
         )
 
-    if not bill_ids:
+    if not bills_to_ingest:
         raise RuntimeError(
-            "No bill IDs found. Inspect sample_legiscan_search.json and adjust bill_id parsing if needed."
+            "No bills found. Check CONGRESS_GOV_API_KEY, STATE_CODE, CONGRESS_NUMBER. "
+            "Inspect sample_congress_members.json for debugging."
         )
+
+    print(f"\nIngesting {len(bills_to_ingest)} bills...")
 
     all_docs = []
     vector_dim = None
 
-    # 3) Ingest bills one by one
-    for bill_id in bill_ids:
-        data = legiscan.get_bill_json(bill_id)
+    for i, bill_info in enumerate(bills_to_ingest):
+        congress = bill_info["congress"]
+        bill_type = bill_info["type"]
+        bill_number = bill_info["number"]
+        bill_key = f"{congress}-{bill_type}-{bill_number}"
 
-        # Save sample bill response for inspection (first bill only)
-        if bill_id == bill_ids[0]:
-            with open("sample_legiscan_bill.json", "w", encoding="utf-8") as f:
-                json.dump(data, f, indent=2)
+        print(f"\n[{i+1}/{len(bills_to_ingest)}] Processing {bill_key}...")
 
-        meta, text = extract_text_from_legiscan_json(data, fallback_bill_id=bill_id)
-        if not text:
-            # Rare: skip bills that produce no text
+        try:
+            bill_detail = client.get_bill_detail(congress, bill_type, bill_number)
+        except Exception as e:
+            print(f"  Warning: Error fetching detail for {bill_key}: {e}")
             continue
 
-        # 4) Chunk & embed
+        try:
+            summaries = client.get_bill_summaries(congress, bill_type, bill_number)
+        except Exception as e:
+            print(f"  Warning: Error fetching summaries for {bill_key}: {e}")
+            summaries = []
+
+        # Save first bill's raw responses for debugging
+        if i == 0:
+            with open("sample_congress_bill.json", "w", encoding="utf-8") as f:
+                json.dump(bill_detail, f, indent=2)
+            with open("sample_congress_summaries.json", "w", encoding="utf-8") as f:
+                json.dump(summaries, f, indent=2)
+
+        meta, text = extract_text_from_congress_bill(
+            bill_detail, summaries, state_code=settings["STATE_CODE"]
+        )
+
+        if not text:
+            print(f"  Warning: No text extracted for {bill_key}, skipping")
+            continue
+
+        print(f"  Title: {meta['title'][:80]}...")
+        print(f"  Text length: {len(text)} chars")
+
         chunks = make_chunks(text, chunk_size=1000, overlap=150)
         vectors = embedder.embed_texts(chunks)
 
@@ -128,18 +223,21 @@ def main():
         if vector_dim is None:
             vector_dim = len(vectors[0])
 
-        # 5) Build documents (one doc per chunk)
-        for i in range(len(chunks)):
+        for ci in range(len(chunks)):
             all_docs.append(
                 {
-                    "doc_id": f"{meta['bill_id']}_{i}",
+                    "doc_id": f"{meta['bill_id']}_{ci}",
                     "bill_id": meta["bill_id"],
                     "state": meta.get("state", ""),
                     "session": meta.get("session", ""),
                     "title": meta.get("title", ""),
-                    "chunk_id": i,
-                    "chunk_text": chunks[i],
-                    "embedding": vectors[i],
+                    "policy_area": meta.get("policy_area", ""),
+                    "bill_type": meta.get("bill_type", ""),
+                    "bill_number": meta.get("bill_number", ""),
+                    "latest_action": meta.get("latest_action", ""),
+                    "chunk_id": ci,
+                    "chunk_text": chunks[ci],
+                    "embedding": vectors[ci],
                 }
             )
 
@@ -151,13 +249,17 @@ def main():
     store.index_documents_bulk(all_docs)
 
     # 7) Print summary
-    print("DONE ✅")
+    print("\nDONE ✅")
     print("Backend:", settings["SEARCH_BACKEND"])
     print("Index:", settings["INDEX_NAME"])
     print("Documents indexed:", len(all_docs))
+    print("Bills processed:", len(bills_to_ingest))
+    print("State:", settings["STATE_CODE"])
+    print("Congress:", settings["CONGRESS_NUMBER"])
     print("Saved:")
-    print(" - sample_legiscan_search.json (TX search response)")
-    print(" - sample_legiscan_bill.json   (first getBill response)")
+    print("  - sample_congress_members.json   (first 3 TX members)")
+    print("  - sample_congress_bill.json      (first bill detail)")
+    print("  - sample_congress_summaries.json (first bill summaries)")
 
 
 if __name__ == "__main__":

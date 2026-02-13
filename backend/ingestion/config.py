@@ -10,7 +10,7 @@ def get_settings():
     URL is usually the docker service name (e.g. http://elasticsearch:9200).
 
     Required:
-      - LEGISCAN_API_KEY
+      - CONGRESS_GOV_API_KEY
 
     Backend selection:
       - SEARCH_BACKEND=elasticsearch (default) OR opensearch
@@ -26,15 +26,16 @@ def get_settings():
 
       Ingestion controls:
       - BILL_ID      (if set, ingest exactly this bill only)
-      - SEARCH_QUERY (default: "privacy")  # used for Texas search
-      - SEARCH_LIMIT (default: 3)          include first N results from search
+      - STATE_CODE       (default: "TX")
+      - CONGRESS_NUMBER  (default: "118")
+      - SEARCH_LIMIT     (default: 10)     max bills to ingest
     """
     settings = {}
 
-    # --- Required: LegiScan key ---
-    settings["LEGISCAN_API_KEY"] = os.getenv("LEGISCAN_API_KEY", "").strip()
-    if not settings["LEGISCAN_API_KEY"]:
-        raise ValueError("LEGISCAN_API_KEY environment variable is required.")
+    # --- Required: Congress.gov API key ---
+    settings["CONGRESS_GOV_API_KEY"] = os.getenv("CONGRESS_GOV_API_KEY", "").strip()
+    if not settings["CONGRESS_GOV_API_KEY"]:
+        raise ValueError("CONGRESS_GOV_API_KEY environment variable is required.")
 
     # --- Backend selection ---
     settings["SEARCH_BACKEND"] = os.getenv("SEARCH_BACKEND", "elasticsearch").strip().lower()
@@ -59,12 +60,13 @@ def get_settings():
             raise ValueError("OPENSEARCH_URL (or ELASTICSEARCH_URL fallback) is required when SEARCH_BACKEND=opensearch.")
         settings["SEARCH_URL"] = os_url if os_url else es_url
 
-    # --- Optional ingestion controls ---
+    # --- ingestion controls ---
     settings["BILL_ID"] = os.getenv("BILL_ID", "").strip()  # ingest this bill only if set
-    settings["SEARCH_QUERY"] = os.getenv("SEARCH_QUERY", "privacy").strip()
+    settings["STATE_CODE"] = os.getenv("STATE_CODE", "TX").strip().upper()
+    settings["CONGRESS_NUMBER"] = os.getenv("CONGRESS_NUMBER", "118").strip()
 
     # Safe parsing for SEARCH_LIMIT
-    limit_raw = os.getenv("SEARCH_LIMIT", "3").strip()
+    limit_raw = os.getenv("SEARCH_LIMIT", "10").strip()
     try:
         settings["SEARCH_LIMIT"] = int(limit_raw)
     except ValueError as e:
