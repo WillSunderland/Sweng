@@ -14,7 +14,7 @@ from .serializers import SERIALIZE_TODO, REGISTER_USER_SERIALIZER, SERIALIZE_USE
 # ------------------------------
 @api_view(['POST'])
 @permission_classes([AllowAny])
-def REGISTER_USER(request):
+def RegisterUser(request):
     serializer = REGISTER_USER_SERIALIZER(data=request.data)
     if serializer.is_valid():
         serializer.save()
@@ -25,7 +25,7 @@ def REGISTER_USER(request):
 # ------------------------------
 # Custom Login with cookies
 # ------------------------------
-class OBTAIN_CUSTOM_TOKEN_PAIR_VIEW(TokenObtainPairView):
+class ObtainCustomTokenPairView(TokenObtainPairView):
     def post(self, request, *args, **kwargs):
         try:
             response = super().post(request, *args, **kwargs)
@@ -61,7 +61,7 @@ class OBTAIN_CUSTOM_TOKEN_PAIR_VIEW(TokenObtainPairView):
 # ------------------------------
 # Custom Refresh
 # ------------------------------
-class TOKEN_CUSTOM_REFRESH_VIEWS(TokenRefreshView):
+class TokenCustomRefreshView(TokenRefreshView):
     def post(self, request, *args, **kwargs):
         try:
             refresh_token = request.COOKIES.get('token_refresh')
@@ -93,7 +93,7 @@ class TOKEN_CUSTOM_REFRESH_VIEWS(TokenRefreshView):
 # ------------------------------
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
-def USER_LOGOUT(request):
+def UserLogout(request):
     resp = Response({'success': True})
     resp.delete_cookie('token_access', path='/')
     resp.delete_cookie('token_refresh', path='/')
@@ -105,7 +105,7 @@ def USER_LOGOUT(request):
 # ------------------------------
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
-def TODOS_GET(request):
+def TodosGet(request):
     user = request.user
     todos = Todo.objects.filter(owner=user)
     serializer = SERIALIZE_TODO(todos, many=True)
@@ -117,6 +117,6 @@ def TODOS_GET(request):
 # ------------------------------
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
-def IS_USER_LOGGED_IN(request):
+def IsUserLoggedIn(request):
     serializer = SERIALIZE_USER(request.user, many=False)
     return Response(serializer.data)
