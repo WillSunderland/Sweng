@@ -42,7 +42,7 @@ INSTALLED_APPS = [
     "rest_framework",
     "corsheaders",
     "api",
-    
+    "login_logout_server"
 ]
 
 CORS_ALLOW_ALL_ORIGINS = True
