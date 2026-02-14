@@ -54,7 +54,7 @@ CORS_ALLOW_CREDENTIALS = True
 
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
-        'rest_framework_simplejwt.authentication.JWTAuthentication',
+        'login_logout_server.authentication.AUTHENTICATION',
     ),
     'DEFAULT_PERMISSION_CLASSES': (
         'rest_framework.permissions.IsAuthenticated',
@@ -68,8 +68,8 @@ SIMPLE_JWT = {
     'BLACKLIST_AFTER_ROTATION': True,
     'UPDATE_LAST_LOGIN': False,
 
-    'AUTH_COOKIE' : 'access-token',
-    'AUTH_COOKIE_REFRESH' : 'refresh-token',
+    'AUTH_COOKIE' : 'token_access',
+    'AUTH_COOKIE_REFRESH' : 'token_refresh',
     'AUTH_COOKIE_SECRET' : False,
     'AUTH_COOKIE_HTTP_ONLY': True,
     'AUTH_COOKIE_PATH' : '/',

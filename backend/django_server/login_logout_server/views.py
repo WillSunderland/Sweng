@@ -2,112 +2,121 @@ from django.contrib.auth.models import User
 from rest_framework.response import Response
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated, AllowAny
-
+from rest_framework import status
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
-from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken, OutstandingToken
-from streamlit import status
 
 from .models import Todo
 from .serializers import SERIALIZE_TODO, REGISTER_USER_SERIALIZER, SERIALIZE_USER
 
-from datetime import datetime, timedelta
 
+# ------------------------------
+# Registration
+# ------------------------------
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])
+@permission_classes([AllowAny])
 def REGISTER_USER(request):
     serializer = REGISTER_USER_SERIALIZER(data=request.data)
     if serializer.is_valid():
         serializer.save()
-        return Response(serializer.data)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+
+# ------------------------------
+# Custom Login with cookies
+# ------------------------------
 class OBTAIN_CUSTOM_TOKEN_PAIR_VIEW(TokenObtainPairView):
     def post(self, request, *args, **kwargs):
         try:
             response = super().post(request, *args, **kwargs)
-            token = response.data
+            tokens = response.data
 
-            token_access = token['access']
-            token_refresh = token['refresh']
+            access_token = tokens.get('access')
+            refresh_token = tokens.get('refresh')
 
-            serializer = SERIALIZE_USER(request.user, many=False)
-
-            resp = Response()
-
-            resp.data = {'success':True}
-
+            resp = Response({'success': True})
             resp.set_cookie(
                 key='token_access',
-                value=str(token_access),
+                value=access_token,
                 httponly=True,
-                secure=True,
-                samesite='None',
+                secure=False,  # True if using HTTPS in production
+                samesite='Lax',
                 path='/'
             )
             resp.set_cookie(
                 key='token_refresh',
-                value=str(token_refresh),
+                value=refresh_token,
                 httponly=True,
-                secure=True,
-                samesite='None',
+                secure=False,
+                samesite='Lax',
                 path='/'
             )
-            resp.data.update(token)
+            resp.data.update(tokens)
             return resp
         except Exception as e:
             print(e)
-            return Response({'success':False})
+            return Response({'success': False}, status=status.HTTP_400_BAD_REQUEST)
 
+
+# ------------------------------
+# Custom Refresh
+# ------------------------------
 class TOKEN_CUSTOM_REFRESH_VIEWS(TokenRefreshView):
     def post(self, request, *args, **kwargs):
         try:
-            token_refresh = request.COOKIES.get('token_refresh')
+            refresh_token = request.COOKIES.get('token_refresh')
+            if not refresh_token:
+                return Response({'refreshed': False}, status=status.HTTP_401_UNAUTHORIZED)
 
-            request.data['refresh'] = token_refresh
-
+            request.data['refresh'] = refresh_token
             response = super().post(request, *args, **kwargs)
-            token = response.data
-            token_access = token['access']
+            tokens = response.data
+            access_token = tokens.get('access')
 
-            resp = Response()
-            resp.data = {'refreshed':True}
-
+            resp = Response({'refreshed': True})
             resp.set_cookie(
                 key='token_access',
-                value=token_access,
+                value=access_token,
                 httponly=True,
                 secure=False,
-                samesite='None',
+                samesite='Lax',
                 path='/'
             )
             return resp
-
         except Exception as e:
             print(e)
-            return Response({'refreshed':False})
+            return Response({'refreshed': False}, status=status.HTTP_400_BAD_REQUEST)
 
+
+# ------------------------------
+# Logout
+# ------------------------------
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def USER_LOGOUT(request):
-    try:
-        RESPONSE = Response()
-        RESPONSE.data = {'success':True}
-        return RESPONSE
-    except Exception as e:
-        print(e)
-        return Response({'success':False})
+    resp = Response({'success': True})
+    resp.delete_cookie('token_access', path='/')
+    resp.delete_cookie('token_refresh', path='/')
+    return resp
 
+
+# ------------------------------
+# Get Todos
+# ------------------------------
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def TODOS_GET(request):
     user = request.user
-    TODOS = Todo.objects.filter(owner=user)
-    serializer = SERIALIZE_TODO(TODOS, many=True)
+    todos = Todo.objects.filter(owner=user)
+    serializer = SERIALIZE_TODO(todos, many=True)
     return Response(serializer.data)
 
+
+# ------------------------------
+# Check if logged in
+# ------------------------------
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def IS_USER_LOGGED_IN(request):
     serializer = SERIALIZE_USER(request.user, many=False)
     return Response(serializer.data)
-
