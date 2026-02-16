@@ -1,0 +1,109 @@
+.report-page {
+  display: grid;
+  grid-template-columns: 200px 1fr 250px;
+  height: 100vh;
+}
+
+.sidebar {
+  background: #f9f9f9;
+  padding: 20px;
+  border-right: 1px solid #ddd;
+  overflow-y: auto;
+}
+
+.sidebar button {
+  background: none;
+  border: none;
+  color: #3b82f6;
+  cursor: pointer;
+  margin-bottom: 20px;
+}
+
+.sidebar nav {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.sidebar a {
+  padding: 8px;
+  text-decoration: none;
+  color: #666;
+  border-radius: 4px;
+}
+
+.sidebar a:hover {
+  background: #e5e5e5;
+}
+
+.report-content {
+  padding: 40px;
+  overflow-y: auto;
+}
+
+.report-content header {
+  margin-bottom: 40px;
+}
+
+.report-content h1 {
+  font-size: 32px;
+  margin: 20px 0;
+}
+
+.report-content section {
+  margin-bottom: 40px;
+}
+
+.report-content h2 {
+  margin-bottom: 20px;
+  color: #333;
+}
+
+.info-box {
+  background: #f9f9f9;
+  padding: 20px;
+  border-radius: 8px;
+  border-left: 4px solid #3b82f6;
+}
+
+.badge {
+  display: inline-block;
+  padding: 4px 10px;
+  background: #dbeafe;
+  color: #1e40af;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  margin-bottom: 10px;
+}
+
+.right-sidebar {
+  background: #f9f9f9;
+  padding: 20px;
+  border-left: 1px solid #ddd;
+}
+
+.metric-box {
+  background: white;
+  padding: 20px;
+  border-radius: 8px;
+  margin-bottom: 20px;
+}
+
+.metric-box h4 {
+  margin-bottom: 10px;
+  color: #666;
+  font-size: 12px;
+  text-transform: uppercase;
+}
+
+.confidence {
+  font-size: 32px;
+  font-weight: 700;
+  color: #10b981;
+}
+
+.change {
+  color: #10b981;
+  font-weight: 600;
+}
