@@ -77,19 +77,19 @@ class SemanticRetriever:
                 "query_vector": query_vector,
                 "k": top_k,
                 "num_candidates": max(50, top_k * 10),
-            },
-            "query": {
-                "bool": {
-                    "filter": [
-                        {"term": {"state": state}}
-                    ]
-                }
+                "filter": {
+                    "term": {"state": state}
+                },
             },
             "_source": [
                 "bill_id",
                 "state",
                 "session",
                 "title",
+                "policy_area",
+                "bill_type",
+                "bill_number",
+                "latest_action",
                 "chunk_id",
                 "chunk_text",
             ],
@@ -112,6 +112,10 @@ class SemanticRetriever:
                 "score": h.get("_score"),
                 "bill_id": src.get("bill_id"),
                 "title": src.get("title"),
+                "policy_area": src.get("policy_area"),
+                "bill_type": src.get("bill_type"),
+                "bill_number": src.get("bill_number"),
+                "latest_action": src.get("latest_action"),
                 "chunk_id": src.get("chunk_id"),
                 "text": src.get("chunk_text"),
             })

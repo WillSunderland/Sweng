@@ -20,6 +20,9 @@ def print_hits(res, max_text_len=200):
         print("Doc ID:", hit.get("_id"))
         print("Bill ID:", source.get("bill_id"))
         print("Title:", source.get("title"))
+        print("Policy Area:", source.get("policy_area"))
+        print("Bill Type:", source.get("bill_type"))
+        print("Latest Action:", source.get("latest_action"))
         text = source.get("chunk_text", "")
         print("Chunk Text:", (text[:max_text_len] + "...") if len(text) > max_text_len else text)
 
