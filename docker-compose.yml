@@ -19,6 +19,7 @@ services:
       - "8001:8001"
     environment:
       - ELASTICSEARCH_URL=${ELASTICSEARCH_URL}
+      
 
   # 3. The Frontend (React UI)
   frontend:
@@ -36,3 +37,20 @@ services:
       - xpack.security.enabled=false
     ports:
       - "9201:9200"
+
+  # 5. Ingestion Pipeline (Congress.gov → Elasticsearch)
+  ingestion:
+    build:
+      context: .
+      dockerfile: backend/ingestion/Dockerfile
+    environment:
+      - CONGRESS_GOV_API_KEY=${CONGRESS_GOV_API_KEY}
+      - SEARCH_BACKEND=elasticsearch
+      - ELASTICSEARCH_URL=http://elasticsearch:9200
+      - INDEX_NAME=legislation_chunks
+      - EMBED_MODEL=all-MiniLM-L6-v2
+      - STATE_CODE=TX
+      - CONGRESS_NUMBER=118
+      - SEARCH_LIMIT=3
+    depends_on:
+      - elasticsearch
