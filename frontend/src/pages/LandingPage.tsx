@@ -21,7 +21,7 @@ const LandingPage = () => {
 
           <button
             className="btn btn-primary"
-            onClick={() => navigate('/login')}
+            onClick={() => navigate('/register')}
           >
             Get Started
           </button>
