@@ -1,8 +1,17 @@
+<<<<<<< HEAD
 import { useNavigate} from 'react-router-dom';
+=======
+import React from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
+>>>>>>> 89f298109 (Add all page components for frontend)
 import '../styles/ExecutionTracePage.css';
 
 const ExecutionTracePage = () => {
   const navigate = useNavigate();
+<<<<<<< HEAD
+=======
+  const { id } = useParams();
+>>>>>>> 89f298109 (Add all page components for frontend)
 
   const steps = [
     { id: 1, title: "INITIALIZING AGENT", status: "complete", time: "0.157s" },

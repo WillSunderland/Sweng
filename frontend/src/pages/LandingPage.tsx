@@ -1,3 +1,7 @@
+<<<<<<< HEAD
+=======
+import React from 'react';
+>>>>>>> 89f298109 (Add all page components for frontend)
 import { useNavigate } from 'react-router-dom';
 import '../styles/LandingPage.css';
 
@@ -20,7 +24,11 @@ const LandingPage = () => {
 
           <button
             className="btn btn-primary"
+<<<<<<< HEAD
             onClick={() => navigate('/register')}
+=======
+            onClick={() => navigate('/login')}
+>>>>>>> 89f298109 (Add all page components for frontend)
           >
             Get Started
           </button>

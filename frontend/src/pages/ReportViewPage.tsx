@@ -1,3 +1,7 @@
+<<<<<<< HEAD
+=======
+import React from 'react';
+>>>>>>> 89f298109 (Add all page components for frontend)
 import { useNavigate, useParams } from 'react-router-dom';
 import '../styles/ReportViewPage.css';
 
