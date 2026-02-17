@@ -1,5 +1,7 @@
 import uuid
 from datetime import datetime, timezone
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.decorators import permission_classes
 
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
@@ -26,6 +28,7 @@ def getIsoTimestamp():
 
 
 @api_view(["POST"])
+@permission_classes([IsAuthenticated])
 def createRun(request):
     serializer = CreateRunRequestSerializer(data=request.data)
 
@@ -59,6 +62,7 @@ def createRun(request):
     )
 
 @api_view(["GET"])
+@permission_classes([IsAuthenticated])
 def listRuns(request):
     items = []
     for runId, run in RUN_STORE.items():
@@ -74,6 +78,7 @@ def listRuns(request):
 
 
 @api_view(["GET"])
+@permission_classes([IsAuthenticated])
 def getRun(request, runId):
     run = RUN_STORE.get(runId)
     if not run:
@@ -140,6 +145,7 @@ def getRun(request, runId):
 
 
 @api_view(["GET"])
+@permission_classes([IsAuthenticated])
 def getSource(request, sourceId):
     source = SOURCE_STORE.get(sourceId)
     if not source:
