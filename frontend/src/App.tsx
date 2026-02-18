@@ -9,6 +9,7 @@ import HistoryPage from './pages/HistoryPage';
 import AboutPage from './pages/AboutPage';
 import Login from "./pages/Login";
 import Register from "./pages/Register";
+import AIagentPage from "./pages/AIagentPage";
 import './App.css';
 
 function App() {
@@ -24,6 +25,7 @@ function App() {
         <Route path="/analysis/:id" element={<AnalysisPage />} />
         <Route path="/history" element={<HistoryPage />} />
         <Route path="/about" element={<AboutPage />} />
+        <Route path="/ai-agent" element={<AIagentPage />} />
       </Routes>
     </Router>
   );
