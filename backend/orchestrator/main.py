@@ -1,7 +1,7 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import List, Optional, Dict, Any
+from typing import List
 import uuid
 from datetime import datetime, timezone
 from graph import app as graph_app
@@ -15,6 +15,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
 
 # Models (Schema)
 class CreateRunRequest(BaseModel):
@@ -115,10 +116,7 @@ async def get_run(run_id: str):
         },
         "statutoryBasis": {
             "analysis": [
-                {
-                    "text": "Lorem ipsum statutory analysis paragraph.",
-                    "citations": ["src_001"],
-                }
+                {"text": "Lorem ipsum statutory analysis paragraph.", "citations": ["src_001"]}
             ]
         },
         "precedents": [],
@@ -133,9 +131,7 @@ async def get_run(run_id: str):
             "trustScore": DEFAULT_TRUST_SCORE,
             "carbonTotalG": DEFAULT_CARBON_G,
         },
-        "references": {
-            "sourceIds": ["src_001"],
-        },
+        "references": {"sourceIds": ["src_001"]},
     }
 
 
