@@ -116,7 +116,10 @@ async def get_run(run_id: str):
         },
         "statutoryBasis": {
             "analysis": [
-                {"text": "Lorem ipsum statutory analysis paragraph.", "citations": ["src_001"]}
+                {
+                    "text": "Lorem ipsum statutory analysis paragraph.",
+                    "citations": ["src_001"],
+                }
             ]
         },
         "precedents": [],
