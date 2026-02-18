@@ -56,7 +56,9 @@ class SemanticRetriever:
         vec = model.encode([user_question], normalize_embeddings=True)
         return vec[0].tolist()
 
-    def vector_search(self, query_vector: List[float], top_k: int = 5, state: str = "TX") -> Dict[str, Any]:
+    def vector_search(
+        self, query_vector: List[float], top_k: int = 5, state: str = "TX"
+    ) -> Dict[str, Any]:
         """
         Run kNN vector search on Elasticsearch.
 
@@ -77,9 +79,7 @@ class SemanticRetriever:
                 "query_vector": query_vector,
                 "k": top_k,
                 "num_candidates": max(50, top_k * 10),
-                "filter": {
-                    "term": {"state": state}
-                },
+                "filter": {"term": {"state": state}},
             },
             "_source": [
                 "bill_id",
@@ -98,7 +98,9 @@ class SemanticRetriever:
         return client.search(index=self.index_name, body=body)
 
     @staticmethod
-    def format_hits(raw_res: Dict[str, Any], user_question: str, top_k: int) -> Dict[str, Any]:
+    def format_hits(
+        raw_res: Dict[str, Any], user_question: str, top_k: int
+    ) -> Dict[str, Any]:
         """
         Convert raw Elasticsearch response into structured JSON output.
         """
@@ -107,18 +109,20 @@ class SemanticRetriever:
         results = []
         for h in hits:
             src = h.get("_source", {})
-            results.append({
-                "doc_id": h.get("_id"),
-                "score": h.get("_score"),
-                "bill_id": src.get("bill_id"),
-                "title": src.get("title"),
-                "policy_area": src.get("policy_area"),
-                "bill_type": src.get("bill_type"),
-                "bill_number": src.get("bill_number"),
-                "latest_action": src.get("latest_action"),
-                "chunk_id": src.get("chunk_id"),
-                "text": src.get("chunk_text"),
-            })
+            results.append(
+                {
+                    "doc_id": h.get("_id"),
+                    "score": h.get("_score"),
+                    "bill_id": src.get("bill_id"),
+                    "title": src.get("title"),
+                    "policy_area": src.get("policy_area"),
+                    "bill_type": src.get("bill_type"),
+                    "bill_number": src.get("bill_number"),
+                    "latest_action": src.get("latest_action"),
+                    "chunk_id": src.get("chunk_id"),
+                    "text": src.get("chunk_text"),
+                }
+            )
 
         return {
             "query": user_question,

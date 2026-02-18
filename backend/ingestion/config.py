@@ -38,7 +38,9 @@ def get_settings():
         raise ValueError("CONGRESS_GOV_API_KEY environment variable is required.")
 
     # --- Backend selection ---
-    settings["SEARCH_BACKEND"] = os.getenv("SEARCH_BACKEND", "elasticsearch").strip().lower()
+    settings["SEARCH_BACKEND"] = (
+        os.getenv("SEARCH_BACKEND", "elasticsearch").strip().lower()
+    )
     if settings["SEARCH_BACKEND"] not in ("elasticsearch", "opensearch"):
         raise ValueError("SEARCH_BACKEND must be 'elasticsearch' or 'opensearch'.")
 
@@ -52,16 +54,22 @@ def get_settings():
 
     if settings["SEARCH_BACKEND"] == "elasticsearch":
         if not es_url:
-            raise ValueError("ELASTICSEARCH_URL is required when SEARCH_BACKEND=elasticsearch.")
+            raise ValueError(
+                "ELASTICSEARCH_URL is required when SEARCH_BACKEND=elasticsearch."
+            )
         settings["SEARCH_URL"] = es_url
     else:
         # Prefer OPENSEARCH_URL, but allow ELASTICSEARCH_URL as fallback.
         if not os_url and not es_url:
-            raise ValueError("OPENSEARCH_URL (or ELASTICSEARCH_URL fallback) is required when SEARCH_BACKEND=opensearch.")
+            raise ValueError(
+                "OPENSEARCH_URL (or ELASTICSEARCH_URL fallback) is required when SEARCH_BACKEND=opensearch."
+            )
         settings["SEARCH_URL"] = os_url if os_url else es_url
 
     # --- ingestion controls ---
-    settings["BILL_ID"] = os.getenv("BILL_ID", "").strip()  # ingest this bill only if set
+    settings["BILL_ID"] = os.getenv(
+        "BILL_ID", ""
+    ).strip()  # ingest this bill only if set
     settings["STATE_CODE"] = os.getenv("STATE_CODE", "TX").strip().upper()
     settings["CONGRESS_NUMBER"] = os.getenv("CONGRESS_NUMBER", "118").strip()
 

@@ -12,7 +12,7 @@ from .serializers import SERIALIZE_TODO, REGISTER_USER_SERIALIZER, SERIALIZE_USE
 # ------------------------------
 # Registration
 # ------------------------------
-@api_view(['POST'])
+@api_view(["POST"])
 @permission_classes([AllowAny])
 def RegisterUser(request):
     serializer = REGISTER_USER_SERIALIZER(data=request.data)
@@ -31,31 +31,31 @@ class ObtainCustomTokenPairView(TokenObtainPairView):
             response = super().post(request, *args, **kwargs)
             tokens = response.data
 
-            access_token = tokens.get('access')
-            refresh_token = tokens.get('refresh')
+            access_token = tokens.get("access")
+            refresh_token = tokens.get("refresh")
 
-            resp = Response({'success': True})
+            resp = Response({"success": True})
             resp.set_cookie(
-                key='token_access',
+                key="token_access",
                 value=access_token,
                 httponly=True,
                 secure=False,  # True if using HTTPS in production
-                samesite='Lax',
-                path='/'
+                samesite="Lax",
+                path="/",
             )
             resp.set_cookie(
-                key='token_refresh',
+                key="token_refresh",
                 value=refresh_token,
                 httponly=True,
                 secure=False,
-                samesite='Lax',
-                path='/'
+                samesite="Lax",
+                path="/",
             )
             resp.data.update(tokens)
             return resp
         except Exception as e:
             print(e)
-            return Response({'success': False}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"success": False}, status=status.HTTP_400_BAD_REQUEST)
 
 
 # ------------------------------
@@ -64,46 +64,48 @@ class ObtainCustomTokenPairView(TokenObtainPairView):
 class TokenCustomRefreshView(TokenRefreshView):
     def post(self, request, *args, **kwargs):
         try:
-            refresh_token = request.COOKIES.get('token_refresh')
+            refresh_token = request.COOKIES.get("token_refresh")
             if not refresh_token:
-                return Response({'refreshed': False}, status=status.HTTP_401_UNAUTHORIZED)
+                return Response(
+                    {"refreshed": False}, status=status.HTTP_401_UNAUTHORIZED
+                )
 
-            request.data['refresh'] = refresh_token
+            request.data["refresh"] = refresh_token
             response = super().post(request, *args, **kwargs)
             tokens = response.data
-            access_token = tokens.get('access')
+            access_token = tokens.get("access")
 
-            resp = Response({'refreshed': True})
+            resp = Response({"refreshed": True})
             resp.set_cookie(
-                key='token_access',
+                key="token_access",
                 value=access_token,
                 httponly=True,
                 secure=False,
-                samesite='Lax',
-                path='/'
+                samesite="Lax",
+                path="/",
             )
             return resp
         except Exception as e:
             print(e)
-            return Response({'refreshed': False}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"refreshed": False}, status=status.HTTP_400_BAD_REQUEST)
 
 
 # ------------------------------
 # Logout
 # ------------------------------
-@api_view(['POST'])
+@api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def UserLogout(request):
-    resp = Response({'success': True})
-    resp.delete_cookie('token_access', path='/')
-    resp.delete_cookie('token_refresh', path='/')
+    resp = Response({"success": True})
+    resp.delete_cookie("token_access", path="/")
+    resp.delete_cookie("token_refresh", path="/")
     return resp
 
 
 # ------------------------------
 # Get Todos
 # ------------------------------
-@api_view(['GET'])
+@api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def TodosGet(request):
     user = request.user
@@ -115,7 +117,7 @@ def TodosGet(request):
 # ------------------------------
 # Check if logged in
 # ------------------------------
-@api_view(['GET'])
+@api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def IsUserLoggedIn(request):
     serializer = SERIALIZE_USER(request.user, many=False)

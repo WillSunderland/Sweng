@@ -24,7 +24,10 @@ def print_hits(res, max_text_len=200):
         print("Bill Type:", source.get("bill_type"))
         print("Latest Action:", source.get("latest_action"))
         text = source.get("chunk_text", "")
-        print("Chunk Text:", (text[:max_text_len] + "...") if len(text) > max_text_len else text)
+        print(
+            "Chunk Text:",
+            (text[:max_text_len] + "...") if len(text) > max_text_len else text,
+        )
 
 
 def main():
@@ -33,7 +36,7 @@ def main():
     store = SearchStore(
         url=settings["SEARCH_URL"],
         index_name=settings["INDEX_NAME"],
-        backend=settings["SEARCH_BACKEND"]
+        backend=settings["SEARCH_BACKEND"],
     )
     store.connect()
 

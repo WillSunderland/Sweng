@@ -8,7 +8,11 @@ from rest_framework.response import Response
 from rest_framework import status
 
 from orchestrator.api.schemas.runSchemas import CreateRunRequestSerializer
-from orchestrator.api.errors.errorMapping import invalidRequestError, runNotFoundError, sourceNotFoundError
+from orchestrator.api.errors.errorMapping import (
+    invalidRequestError,
+    runNotFoundError,
+    sourceNotFoundError,
+)
 from orchestrator.api.constants.runConstants import (
     RUN_STATUS_RUNNING,
     RUN_STATUS_COMPLETED,
@@ -26,7 +30,6 @@ def getIsoTimestamp():
     return datetime.now(timezone.utc).isoformat()
 
 
-
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def createRun(request):
@@ -36,14 +39,14 @@ def createRun(request):
         return Response(
             invalidRequestError(serializer.errors),
             status=status.HTTP_400_BAD_REQUEST,
-            )
+        )
     runId = f"run_{uuid.uuid4().hex[:12]}"
     createdAt = getIsoTimestamp()
 
     RUN_STORE[runId] = {
         "query": serializer.validated_data["query"],
         "createdAt": createdAt,
-        }
+    }
 
     # stub to prevent broken citation links in FE
     SOURCE_STORE["src_001"] = {
@@ -60,6 +63,7 @@ def createRun(request):
         },
         status=status.HTTP_201_CREATED,
     )
+
 
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
