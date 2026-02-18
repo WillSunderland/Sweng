@@ -18,11 +18,12 @@ class Settings(BaseSettings):
 
     # HuggingFace Local Server
     hf_server_url: str = "http://hf-server:8000"
-    hf_model: str = "openai/gpt-oss-20b"
-    hf_timeout: int = 15
+    hf_model: str = "gpt2"
+    hf_timeout: int = 60
 
     # Routing
     simple_query_threshold: int = 2
+    force_hf_only: bool = False
 
     model_config = SettingsConfigDict(
         env_file=".env",

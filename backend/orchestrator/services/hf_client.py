@@ -33,6 +33,10 @@ class HuggingFaceLLMClient(BaseLLMClient):
             f"<|assistant|>"
         )
 
+        # Fail fast if HF server isn't healthy
+        if not await self.health_check():
+            raise RuntimeError("HuggingFace server is not healthy or not ready.")
+
         payload = {
             "repoId": self.model,
             "capability": "text-generation",
@@ -40,7 +44,11 @@ class HuggingFaceLLMClient(BaseLLMClient):
             "params": {
                 "max_new_tokens": max_tokens,
                 "temperature": temperature,
-                "manual_seed": 42,
+                "do_sample": False,
+                "top_p": 0.9,
+                "repetition_penalty": 1.15,
+                "no_repeat_ngram_size": 3,
+                "return_full_text": False,
             },
         }
 
@@ -59,6 +67,18 @@ class HuggingFaceLLMClient(BaseLLMClient):
             if generated_text.startswith(full_prompt):
                 generated_text = generated_text[len(full_prompt) :].strip()
 
+            generated_text = (
+                generated_text.replace("<|end|>", "")
+                .replace("<|assistant|>", "")
+                .replace("<|system|>", "")
+                .replace("<|user|>", "")
+            ).strip()
+
+            if "Answer:" in generated_text:
+                generated_text = generated_text.split("Answer:", 1)[1].strip()
+            if "Question:" in generated_text:
+                generated_text = generated_text.split("Question:", 1)[0].strip()
+
             prompt_words = len(full_prompt.split())
             completion_words = len(generated_text.split())
 
@@ -72,7 +92,7 @@ class HuggingFaceLLMClient(BaseLLMClient):
             )
 
         except Exception as e:
-            logger.error("HuggingFace server call failed: %s", e)
+            logger.error("HuggingFace server call failed: %s", repr(e))
             raise
 
     async def health_check(self) -> bool:

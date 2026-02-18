@@ -18,10 +18,15 @@ def build_rag_user_prompt(query: str, documents: list[dict]) -> str:
         The formatted user prompt string
     """
     context_parts = []
+    max_total_chars = 2400
+    max_chunk_chars = 600
+    total_chars = 0
 
     for i, doc in enumerate(documents, 1):
         source_title = doc.get("title", "Unknown Source")
         chunk_text = doc.get("chunk_text", "").strip()
+        if len(chunk_text) > max_chunk_chars:
+            chunk_text = chunk_text[:max_chunk_chars].rstrip() + "…"
 
         state = doc.get("state", "Unknown")
         bill_type = doc.get("bill_type", "")
@@ -33,9 +38,11 @@ def build_rag_user_prompt(query: str, documents: list[dict]) -> str:
         if policy_area:
             source_info += f" | Policy Area: {policy_area}"
 
-        context_parts.append(
-            f"Document {i} (Title: {source_title} | Source: {source_info}):\n{chunk_text}\n"
-        )
+        entry = f"Document {i} (Title: {source_title} | Source: {source_info}):\n{chunk_text}\n"
+        if total_chars + len(entry) > max_total_chars:
+            break
+        context_parts.append(entry)
+        total_chars += len(entry)
 
     context_str = "\n".join(context_parts)
 

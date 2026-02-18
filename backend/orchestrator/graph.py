@@ -55,6 +55,8 @@ def retrieve_docs(state: AgentState):
 
 
 def _route_provider(query: str, result_count: int) -> str:
+    if settings.force_hf_only:
+        return "huggingface"
     complex_indicators = [
         "compare",
         "vs",
@@ -93,9 +95,13 @@ async def generate_answer(state: AgentState):
 
     try:
         if provider == "huggingface":
-            response = await hf_client.generate(SYSTEM_PROMPT, user_prompt)
+            response = await hf_client.generate(
+                SYSTEM_PROMPT, user_prompt, max_tokens=256
+            )
         else:
-            response = await nvidia_client.generate(SYSTEM_PROMPT, user_prompt)
+            response = await nvidia_client.generate(
+                SYSTEM_PROMPT, user_prompt, max_tokens=256
+            )
 
         return {
             "answer": response.content,
