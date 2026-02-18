@@ -8,9 +8,13 @@ services:
       - "8000:8000"
     environment:
       - NVIDIA_API_KEY=${NVIDIA_API_KEY}
+      - NVIDIA_BASE_URL=${NVIDIA_BASE_URL:-https://integrate.api.nvidia.com/v1}
+      - NVIDIA_MODEL=${NVIDIA_MODEL:-openai/gpt-oss-120b}
+      - HF_SERVER_URL=http://hf-server:8000
       - MCP_SERVER_URL=http://mcp-server:8001
     depends_on:
       - mcp-server
+      - hf-server
 
   # 2. The MCP Server (Tools + ElasticSearch Client)
   mcp-server:
@@ -36,3 +40,35 @@ services:
       - xpack.security.enabled=false
     ports:
       - "9201:9200"
+
+  # 5. HuggingFace Model Server (Ticket 2.5)
+  hf-server:
+    build:
+      context: .
+      dockerfile: Dockerfile.hf
+    ports:
+      - "8002:8000"
+    environment:
+      - MAX_CACHE_ITEMS=3
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8000/health" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # 6. Ingestion Pipeline (Congress.gov → Elasticsearch from backend-dev)
+  ingestion:
+    build:
+      context: .
+      dockerfile: backend/ingestion/Dockerfile
+    environment:
+      - CONGRESS_GOV_API_KEY=${CONGRESS_GOV_API_KEY}
+      - SEARCH_BACKEND=elasticsearch
+      - ELASTICSEARCH_URL=http://elasticsearch:9200
+      - INDEX_NAME=legislation_chunks
+      - EMBED_MODEL=all-MiniLM-L6-v2
+      - STATE_CODE=TX
+      - CONGRESS_NUMBER=118
+      - SEARCH_LIMIT=3
+    depends_on:
+      - elasticsearch

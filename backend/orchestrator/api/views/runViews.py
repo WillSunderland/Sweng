@@ -1,17 +1,19 @@
 import uuid
 from datetime import datetime, timezone
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.decorators import permission_classes
 
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from rest_framework import status
 
-from api.schemas.runSchemas import CreateRunRequestserialiser
-from api.errors.errorMapping import (
+from orchestrator.api.schemas.runSchemas import CreateRunRequestSerializer
+from orchestrator.api.errors.errorMapping import (
     invalidRequestError,
     runNotFoundError,
     sourceNotFoundError,
 )
-from api.constants.runConstants import (
+from orchestrator.api.constants.runConstants import (
     RUN_STATUS_RUNNING,
     RUN_STATUS_COMPLETED,
     DEFAULT_TRUST_SCORE,
@@ -29,19 +31,20 @@ def getIsoTimestamp():
 
 
 @api_view(["POST"])
+@permission_classes([IsAuthenticated])
 def createRun(request):
-    serialiser = CreateRunRequestserialiser(data=request.data)
+    serializer = CreateRunRequestSerializer(data=request.data)
 
-    if not serialiser.is_valid():
+    if not serializer.is_valid():
         return Response(
-            invalidRequestError(serialiser.errors),
+            invalidRequestError(serializer.errors),
             status=status.HTTP_400_BAD_REQUEST,
         )
     runId = f"run_{uuid.uuid4().hex[:12]}"
     createdAt = getIsoTimestamp()
 
     RUN_STORE[runId] = {
-        "query": serialiser.validated_data["query"],
+        "query": serializer.validated_data["query"],
         "createdAt": createdAt,
     }
 
@@ -63,6 +66,7 @@ def createRun(request):
 
 
 @api_view(["GET"])
+@permission_classes([IsAuthenticated])
 def listRuns(request):
     items = []
     for runId, run in RUN_STORE.items():
@@ -78,6 +82,7 @@ def listRuns(request):
 
 
 @api_view(["GET"])
+@permission_classes([IsAuthenticated])
 def getRun(request, runId):
     run = RUN_STORE.get(runId)
     if not run:
@@ -144,6 +149,7 @@ def getRun(request, runId):
 
 
 @api_view(["GET"])
+@permission_classes([IsAuthenticated])
 def getSource(request, sourceId):
     source = SOURCE_STORE.get(sourceId)
     if not source:

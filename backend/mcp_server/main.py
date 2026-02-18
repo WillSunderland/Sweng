@@ -1,49 +1,48 @@
 from mcp.server.fastmcp import FastMCP
 from typing import List, Dict
 import logging
+from semantic_retrieval import SemanticRetriever
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("mcp-server")
 
-# Initialize the MCP Server
 mcp = FastMCP(
     name="Propylon-Legislative-Research",
     instructions=(
         "This MCP server provides AI-assisted legislative research tools, "
-        "retrieving an summarising relevant legal documents."
+        "retrieving and summarising relevant legal documents."
     ),
 )
 
-DUMMY_DOCS = [
-    {
-        "title": "Planning and Development Act 2000",
-        "summary": "Core legalisation regarding planning in Ireland",
-    },
-    {
-        "title": "Housing (Regulation of Approved Housing Bodies) Act 2019",
-        "summary": "Regulates approved housing bodies.",
-    },
-]
+# Create ONE retriever instance (caches ES connection + embedding model)
+retriever = SemanticRetriever()
 
 
 @mcp.tool()
-def search_elasticsearch(query: str, top_k: int = 5) -> List[Dict[str, str]]:
+def search_elasticsearch(query: str, top_k: int = 5, state: str = "TX") -> dict:
     """
-    Search for legislative documents in the Propylon ElasticSearch index.
-    Args:
-        query: The user's natural language question regarding laws.
-        top_k: Number of documents to retrieve.
-    """
-    # TODO: Connect to actual ElasticSearch instance provided by Propylon
-    logger.info("Received search query: %s", query)
-    try:
-        # TODO (Ticket 2.2): Replace with real ElasticSearch query
-        results = DUMMY_DOCS[:top_k]
-        return results
 
-    except Exception as e:
-        logger.error("Search failed: %s", e)
-        return []
+    Input:
+      query: user natural language question
+      top_k: number of chunks to return
+      state: metadata filter (default TX)
+
+    Output:
+      {
+        "query": "...",
+        "top_k": 5,
+        "results": [
+          {"doc_id": "...", "score": ..., "bill_id": "...", "title": "...", "policy_area": "...",
+          "bill_type": "...", "bill_number": "...", "latest_action": "...", "chunk_id": 0, "text": "..."}
+        ]
+      }
+    """
+    logger.info("Received semantic search query: %s", query)
+    try:
+        return retriever.search(query=query, top_k=top_k, state=state)
+    except Exception:
+        logger.exception("Search failed")
+        return {"query": query, "top_k": top_k, "results": []}
 
 
 def main():
