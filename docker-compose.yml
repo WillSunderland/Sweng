@@ -12,6 +12,11 @@ services:
       - NVIDIA_MODEL=${NVIDIA_MODEL:-openai/gpt-oss-120b}
       - HF_SERVER_URL=http://hf-server:8000
       - MCP_SERVER_URL=http://mcp-server:8001
+      - ELASTICSEARCH_URL=http://elasticsearch:9200
+      - INDEX_NAME=${INDEX_NAME:-legislation_chunks}
+      - EMBED_MODEL=${EMBED_MODEL:-all-MiniLM-L6-v2}
+      - STATE_CODE=${STATE_CODE:-TX}
+      - SEARCH_K=${SEARCH_K:-5}
     depends_on:
       - mcp-server
       - hf-server

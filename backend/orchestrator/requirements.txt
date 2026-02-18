@@ -1,3 +1,9 @@
 fastapi
 uvicorn
 langgraph
+elasticsearch>=8.0.0
+sentence-transformers
+openai
+httpx
+tenacity
+pydantic-settings

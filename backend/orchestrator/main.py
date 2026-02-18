@@ -1,7 +1,7 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import List, Optional, Dict, Any
+from typing import List
 import uuid
 from datetime import datetime, timezone
 from graph import app as graph_app
@@ -15,6 +15,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
 
 # Models (Schema)
 class CreateRunRequest(BaseModel):
@@ -45,13 +46,7 @@ DEFAULT_CARBON_G = 0.5
 
 # In-memory stores
 RUN_STORE = {}
-SOURCE_STORE = {
-    "src_001": {
-        "sourceId": "src_001",
-        "title": "Placeholder Source",
-        "fullText": "Lorem Ipsum Source content.",
-    }
-}
+SOURCE_STORE = {}
 
 
 def get_iso_timestamp():
@@ -72,12 +67,42 @@ async def create_run(request: CreateRunRequest):
 
     # Trigger LangGraph workflow (async in background in real app)
     # For now, we just invoke it so we verify it works
-    initial_state = {"query": request.query, "messages": [], "documents": []}
+    initial_state = {
+        "query": request.query,
+        "processed_query": "",
+        "documents": [],
+        "answer": "",
+        "model_used": "",
+        "provider_used": "",
+        "token_count": 0,
+        "error": "",
+    }
     result = await graph_app.ainvoke(initial_state)
 
     # In a real app we'd update the run result here
     RUN_STORE[run_id]["result"] = result
     RUN_STORE[run_id]["status"] = RUN_STATUS_COMPLETED
+
+    # Build source store entries for this run
+    documents = result.get("documents", []) or []
+    source_ids = []
+    for doc in documents:
+        source_id = doc.get("doc_id") or f"src_{uuid.uuid4().hex[:8]}"
+        source_ids.append(source_id)
+        SOURCE_STORE[source_id] = {
+            "sourceId": source_id,
+            "title": doc.get("title", "Unknown Source"),
+            "fullText": doc.get("chunk_text", ""),
+            "billId": doc.get("bill_id"),
+            "state": doc.get("state"),
+            "billType": doc.get("bill_type"),
+            "billNumber": doc.get("bill_number"),
+            "session": doc.get("session"),
+            "policyArea": doc.get("policy_area"),
+            "latestAction": doc.get("latest_action"),
+            "chunkId": doc.get("chunk_id"),
+        }
+    RUN_STORE[run_id]["sourceIds"] = source_ids
 
     return {"runId": run_id, "status": RUN_STATUS_RUNNING, "createdAt": created_at}
 
@@ -113,18 +138,11 @@ async def get_run(run_id: str):
             "impactLevel": "high",
             "actionRequired": True,
         },
-        "statutoryBasis": {
-            "analysis": [
-                {
-                    "text": "Lorem ipsum statutory analysis paragraph.",
-                    "citations": ["src_001"],
-                }
-            ]
-        },
+        "statutoryBasis": {"analysis": []},
         "precedents": [],
         "agentCommentary": {
             "aiGenerated": True,
-            "content": f"Graph Result: {run.get('result', 'No result yet')}",
+            "content": run.get("result", {}).get("answer", "No result yet"),
             "suggestedActions": [],
         },
         "reasoningPath": {
@@ -134,7 +152,7 @@ async def get_run(run_id: str):
             "carbonTotalG": DEFAULT_CARBON_G,
         },
         "references": {
-            "sourceIds": ["src_001"],
+            "sourceIds": run.get("sourceIds", []),
         },
     }
 
