@@ -121,12 +121,14 @@ def discover_tx_bills(client, state_code, congress_number, limit):
                 continue
 
             seen_bills.add(bill_key)
-            bills.append({
-                "congress": str(congress),
-                "type": bill_type,
-                "number": str(bill_number),
-                "title": bill.get("title", ""),
-            })
+            bills.append(
+                {
+                    "congress": str(congress),
+                    "type": bill_type,
+                    "number": str(bill_number),
+                    "title": bill.get("title", ""),
+                }
+            )
 
     return bills
 
@@ -154,12 +156,14 @@ def main():
         parts = settings["BILL_ID"].replace("-", "/").split("/")
         if len(parts) != 3:
             raise ValueError("BILL_ID must be in format '118/hr/1234' or '118-hr-1234'")
-        bills_to_ingest = [{
-            "congress": parts[0],
-            "type": parts[1].lower(),
-            "number": parts[2],
-            "title": "",
-        }]
+        bills_to_ingest = [
+            {
+                "congress": parts[0],
+                "type": parts[1].lower(),
+                "number": parts[2],
+                "title": "",
+            }
+        ]
     else:
         bills_to_ingest = discover_tx_bills(
             client,
@@ -245,7 +249,9 @@ def main():
             )
 
     if not all_docs:
-        raise RuntimeError("No documents built for indexing. Check extraction/chunking outputs.")
+        raise RuntimeError(
+            "No documents built for indexing. Check extraction/chunking outputs."
+        )
 
     # 6) Create index and bulk index documents
     store.create_index_if_missing(vector_dim)

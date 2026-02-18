@@ -37,7 +37,7 @@ class SearchStore:
             u = urlparse(self.url)
             host = u.hostname or "localhost"
             port = u.port or (443 if u.scheme == "https" else 9200)
-            use_ssl = (u.scheme == "https")
+            use_ssl = u.scheme == "https"
 
             self.client = OpenSearch(
                 hosts=[{"host": host, "port": port}],
@@ -47,6 +47,7 @@ class SearchStore:
             )
         else:
             from elasticsearch import Elasticsearch
+
             # Elasticsearch client accepts URL directly
             self.client = Elasticsearch(self.url)
 
@@ -131,12 +132,14 @@ class SearchStore:
 
         actions = []
         for d in docs:
-            actions.append({
-                "_op_type": "index",
-                "_index": self.index_name,
-                "_id": d["doc_id"],
-                "_source": d,
-            })
+            actions.append(
+                {
+                    "_op_type": "index",
+                    "_index": self.index_name,
+                    "_id": d["doc_id"],
+                    "_source": d,
+                }
+            )
 
         helpers.bulk(self.client, actions)
 
@@ -160,14 +163,7 @@ class SearchStore:
         if self.backend == "opensearch":
             body = {
                 "size": k,
-                "query": {
-                    "knn": {
-                        "embedding": {
-                            "vector": query_vector,
-                            "k": k
-                        }
-                    }
-                }
+                "query": {"knn": {"embedding": {"vector": query_vector, "k": k}}},
             }
             return self.client.search(index=self.index_name, body=body)
 
@@ -182,4 +178,3 @@ class SearchStore:
             "_source": True,
         }
         return self.client.search(index=self.index_name, body=body)
-    

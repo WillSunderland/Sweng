@@ -1,5 +1,6 @@
 # backend/ingestion/chunking.py
 
+
 def make_chunks(text, chunk_size=1000, overlap=150):
     """
     Split a long string into overlapping chunks.

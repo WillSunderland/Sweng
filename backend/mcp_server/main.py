@@ -3,9 +3,6 @@ from typing import List, Dict
 import logging
 from semantic_retrieval import SemanticRetriever
 
-
-
-
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("mcp-server")
 
@@ -35,7 +32,7 @@ def search_elasticsearch(query: str, top_k: int = 5, state: str = "TX") -> dict:
         "query": "...",
         "top_k": 5,
         "results": [
-          {"doc_id": "...", "score": ..., "bill_id": "...", "title": "...", "policy_area": "...", 
+          {"doc_id": "...", "score": ..., "bill_id": "...", "title": "...", "policy_area": "...",
           "bill_type": "...", "bill_number": "...", "latest_action": "...", "chunk_id": 0, "text": "..."}
         ]
       }

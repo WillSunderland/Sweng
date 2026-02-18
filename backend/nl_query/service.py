@@ -4,6 +4,7 @@ from schemas import *
 
 logger = logging.getLogger("nl-query-service")
 
+
 async def NLQueryService(request: NLQueryRequest) -> NLQueryResult:
     """
 

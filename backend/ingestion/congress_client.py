@@ -65,10 +65,13 @@ class CongressClient:
         offset = 0
 
         while True:
-            data = self._get(f"/member/congress/{congress}/{state_code}", params={
-                "limit": limit,
-                "offset": offset,
-            })
+            data = self._get(
+                f"/member/congress/{congress}/{state_code}",
+                params={
+                    "limit": limit,
+                    "offset": offset,
+                },
+            )
 
             batch = data.get("members", [])
             if not batch:

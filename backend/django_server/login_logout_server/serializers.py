@@ -4,26 +4,29 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework import serializers
 from django.contrib.auth.models import User
 
+
 class SERIALIZE_TODO(serializers.ModelSerializer):
     class Meta:
         model = Todo
-        fields = ['id', 'name', 'completed']
+        fields = ["id", "name", "completed"]
+
 
 class REGISTER_USER_SERIALIZER(serializers.ModelSerializer):
     class Meta:
         model = User
-        fields = ['username', 'email', 'password']
+        fields = ["username", "email", "password"]
 
     def create(self, validated_data):
         user = User(
-            username=validated_data['username'],
-            email=validated_data['email'],
+            username=validated_data["username"],
+            email=validated_data["email"],
         )
-        user.set_password(validated_data['password'])
+        user.set_password(validated_data["password"])
         user.save()
         return user
+
 
 class SERIALIZE_USER(serializers.ModelSerializer):
     class Meta:
         model = User
-        fields = ['username']
+        fields = ["username"]
