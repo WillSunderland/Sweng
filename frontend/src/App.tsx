@@ -1,7 +1,7 @@
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import LandingPage from './pages/LandingPage';
-import WorkspacePage from './pages/Workspacepage';
+import WorkspacePage from './pages/WorkspacePage';
 import ReportViewPage from './pages/ReportViewPage';
 import ExecutionTracePage from './pages/ExecutionTracePage';
 import AnalysisPage from './pages/AnalysisPage';
