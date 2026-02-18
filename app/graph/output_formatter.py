@@ -32,8 +32,13 @@ def llmOutputNode(state: GraphState) -> dict[str, Any]:
         source_data = hit.get("_source", {})
         formatted_sources.append({
             "title": source_data.get("title", "Unknown"),
-            "source_file": source_data.get("source_file", "Unknown"),
-            # OpenSearch score is in _score
+            "bill_id": source_data.get("bill_id", ""),
+            "state": source_data.get("state", ""),
+            "bill_type": source_data.get("bill_type", ""),
+            "bill_number": source_data.get("bill_number", ""),
+            "session": source_data.get("session", ""),
+            "policy_area": source_data.get("policy_area", ""),
+            "source_file": f"{source_data.get('state', '')} {source_data.get('bill_type', '')} {source_data.get('bill_number', '')}".strip(),
             "relevance_score": hit.get("_score", 0.0)
         })
         

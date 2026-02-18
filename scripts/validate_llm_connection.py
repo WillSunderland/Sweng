@@ -86,13 +86,21 @@ async def main():
     print("\n--- Testing RAG Prompt ---")
     try:
         query = "test query"
-        docs = [{"title": "T1", "content": "C1", "source_file": "f1"}]
+        docs = [{
+            "title": "Nevada Tax Reform Act",
+            "chunk_text": "Section 5: All individuals earning above $80,000...",
+            "state": "Nevada",
+            "bill_type": "HB",
+            "bill_number": "123",
+            "session": "2024",
+            "policy_area": "Taxation"
+        }]
         prompt = build_rag_user_prompt(query, docs)
-        if "T1" in prompt and "C1" in prompt and query in prompt:
+        if "Nevada Tax Reform Act" in prompt and "Section 5" in prompt and query in prompt:
             print("Prompt Built Successfully")
             results["RAG Prompt"] = "PASS"
         else:
-            print("Prompt Content Missing")
+            print(f"Prompt Content Missing or Incorrect:\n{prompt}")
     except Exception as e:
         print(f"Prompt Error: {e}")
 

@@ -59,7 +59,7 @@ def test_output_formatter_success(sample_state):
     
     assert response["answer"] == "Final Answer"
     assert len(response["sources"]) == 3
-    assert response["sources"][0]["title"] == "Doc 1"
+    assert response["sources"][0]["title"] == "Nevada Tax Reform Act"
 
 def test_output_formatter_error(sample_state):
     state = sample_state.copy()

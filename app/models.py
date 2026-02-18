@@ -26,7 +26,13 @@ class SearchResult(BaseModel):
 
 class SourceInfo(BaseModel):
     title: str
-    source_file: str
+    bill_id: str = ""
+    state: str = ""
+    bill_type: str = ""
+    bill_number: str = ""
+    session: str = ""
+    policy_area: str = ""
+    source_file: str = ""
     relevance_score: float = 0.0
 
 

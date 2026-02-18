@@ -7,30 +7,72 @@ from app.services.llm_client import LLMResponse
 def mock_search_results():
     return [
         {
-            "_id": "1",
-            "_score": 0.9,
+            "bill_id": "NV-HB-123",
+            "state": "Nevada",
+            "session": "2024",
+            "title": "Nevada Tax Reform Act",
+            "policy_area": "Taxation",
+            "bill_type": "HB",
+            "bill_number": "123",
+            "latest_action": "Signed by Governor",
+            "chunk_id": "chunk_001",
+            "chunk_text": "Section 5: All individuals earning above $80,000 shall be subject to...",
+            "_score": 0.95,
             "_source": {
-                "title": "Doc 1",
-                "content": "Content 1",
-                "source_file": "doc1.pdf"
+                "bill_id": "NV-HB-123",
+                "state": "Nevada",
+                "session": "2024",
+                "title": "Nevada Tax Reform Act",
+                "policy_area": "Taxation",
+                "bill_type": "HB",
+                "bill_number": "123",
+                "chunk_text": "Section 5: All individuals earning above $80,000 shall be subject to..."
             }
         },
         {
-            "_id": "2",
-            "_score": 0.8,
+            "bill_id": "NV-SB-456",
+            "state": "Nevada",
+            "session": "2024",
+            "title": "Nevada Revenue Code Update",
+            "policy_area": "Taxation",
+            "bill_type": "SB",
+            "bill_number": "456",
+            "latest_action": "Passed Senate",
+            "chunk_id": "chunk_002",
+            "chunk_text": "The standard deduction for single filers shall be adjusted to...",
+            "_score": 0.87,
             "_source": {
-                "title": "Doc 2",
-                "content": "Content 2",
-                "source_file": "doc2.pdf"
+                "bill_id": "NV-SB-456",
+                "state": "Nevada",
+                "session": "2024",
+                "title": "Nevada Revenue Code Update",
+                "policy_area": "Taxation",
+                "bill_type": "SB",
+                "bill_number": "456",
+                "chunk_text": "The standard deduction for single filers shall be adjusted to..."
             }
         },
         {
-            "_id": "3",
-            "_score": 0.7,
+            "bill_id": "NY-AB-789",
+            "state": "New York",
+            "session": "2024",
+            "title": "New York Income Tax Amendment",
+            "policy_area": "Taxation",
+            "bill_type": "AB",
+            "bill_number": "789",
+            "latest_action": "In Committee",
+            "chunk_id": "chunk_003",
+            "chunk_text": "Residents of New York State with annual income exceeding $100,000...",
+            "_score": 0.82,
             "_source": {
-                "title": "Doc 3",
-                "content": "Content 3",
-                "source_file": "doc3.pdf"
+                "bill_id": "NY-AB-789",
+                "state": "New York",
+                "session": "2024",
+                "title": "New York Income Tax Amendment",
+                "policy_area": "Taxation",
+                "bill_type": "AB",
+                "bill_number": "789",
+                "chunk_text": "Residents of New York State with annual income exceeding $100,000..."
             }
         }
     ]
