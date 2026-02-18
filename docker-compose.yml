@@ -55,3 +55,20 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+
+  # 6. Ingestion Pipeline (Congress.gov → Elasticsearch from backend-dev)
+  ingestion:
+    build:
+      context: .
+      dockerfile: backend/ingestion/Dockerfile
+    environment:
+      - CONGRESS_GOV_API_KEY=${CONGRESS_GOV_API_KEY}
+      - SEARCH_BACKEND=elasticsearch
+      - ELASTICSEARCH_URL=http://elasticsearch:9200
+      - INDEX_NAME=legislation_chunks
+      - EMBED_MODEL=all-MiniLM-L6-v2
+      - STATE_CODE=TX
+      - CONGRESS_NUMBER=118
+      - SEARCH_LIMIT=3
+    depends_on:
+      - elasticsearch

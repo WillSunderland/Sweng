@@ -1,2 +1,4 @@
 mcp
 uvicorn
+elasticsearch>=8.0.0
+sentence-transformers
