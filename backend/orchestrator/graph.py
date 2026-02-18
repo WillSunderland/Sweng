@@ -103,8 +103,30 @@ async def generate_answer(state: AgentState):
                 SYSTEM_PROMPT, user_prompt, max_tokens=256
             )
 
+        # Append compact source list so the UI always shows document references
+        source_lines = []
+        for doc in documents[:5]:
+            title = doc.get("title", "Unknown Source")
+            bill_id = doc.get("bill_id", "")
+            chunk_id = doc.get("chunk_id", "")
+            label = f"{title}"
+            meta = " ".join(
+                [
+                    p
+                    for p in [bill_id, f"chunk {chunk_id}" if chunk_id != "" else ""]
+                    if p
+                ]
+            )
+            if meta:
+                label = f"{label} ({meta})"
+            source_lines.append(f"- {label}")
+
+        answer_text = response.content
+        if source_lines:
+            answer_text = f"{answer_text}\n\nSources:\n" + "\n".join(source_lines)
+
         return {
-            "answer": response.content,
+            "answer": answer_text,
             "model_used": response.model,
             "provider_used": response.provider,
             "token_count": response.total_tokens,
