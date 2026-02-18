@@ -266,9 +266,6 @@ def main():
     print("State:", settings["STATE_CODE"])
     print("Congress:", settings["CONGRESS_NUMBER"])
     print("Saved:")
-    print("  - sample_congress_members.json   (first 3 TX members)")
-    print("  - sample_congress_bill.json      (first bill detail)")
-    print("  - sample_congress_summaries.json (first bill summaries)")
 
 
 if __name__ == "__main__":

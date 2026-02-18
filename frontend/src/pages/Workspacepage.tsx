@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import '../styles/Workspacepage.css';
+import '../styles/WorkspacePage.css';
 
 type CaseStatus = 'review-needed' | 'processing' | 'completed' | 'draft';
 type ActionType = 'analysis' | 'trace' | 'report' | 'draft';
@@ -160,9 +160,9 @@ const WorkspacePage: React.FC = () => {
             <svg className="search-icon" width="20" height="20" viewBox="0 0 20 20" fill="none">
               <path d="M9 17A8 8 0 1 0 9 1a8 8 0 0 0 0 16zM18 18l-4.35-4.35" stroke="#9CA3AF" strokeWidth="2" strokeLinecap="round"/>
             </svg>
-            <input 
-              type="text" 
-              placeholder="Search briefs, case law or archive research..." 
+            <input
+              type="text"
+              placeholder="Search briefs, case law or archive research..."
               className="search-input"
             />
           </div>
@@ -183,7 +183,7 @@ const WorkspacePage: React.FC = () => {
           <div className="page-actions">
             <div className="filter-sort-container">
               <div className="dropdown">
-                <button 
+                <button
                   className="btn-secondary"
                   onClick={() => {
                     setShowFilterDropdown(!showFilterDropdown);
@@ -206,7 +206,7 @@ const WorkspacePage: React.FC = () => {
               </div>
 
               <div className="dropdown">
-                <button 
+                <button
                   className="btn-secondary"
                   onClick={() => {
                     setShowSortDropdown(!showSortDropdown);
@@ -235,25 +235,25 @@ const WorkspacePage: React.FC = () => {
         </div>
 
         <div className="filter-tabs">
-          <button 
+          <button
             className={`filter-tab ${activeFilter === 'all-cases' ? 'active' : ''}`}
             onClick={() => setActiveFilter('all-cases')}
           >
             All Cases
           </button>
-          <button 
+          <button
             className={`filter-tab ${activeFilter === 'drafts' ? 'active' : ''}`}
             onClick={() => setActiveFilter('drafts')}
           >
             Drafts (1)
           </button>
-          <button 
+          <button
             className={`filter-tab ${activeFilter === 'completed' ? 'active' : ''}`}
             onClick={() => setActiveFilter('completed')}
           >
             Completed (1)
           </button>
-          <button 
+          <button
             className={`filter-tab ${activeFilter === 'high-priority' ? 'active' : ''}`}
             onClick={() => setActiveFilter('high-priority')}
           >
@@ -264,8 +264,8 @@ const WorkspacePage: React.FC = () => {
         <div className="cases-container">
           <div className="cases-grid">
             {getFilteredCases().map((caseItem) => (
-              <div 
-                key={caseItem.id} 
+              <div
+                key={caseItem.id}
                 className="case-card"
                 onClick={() => handleCaseClick(caseItem)}
               >
@@ -304,8 +304,8 @@ const WorkspacePage: React.FC = () => {
                 {caseItem.progress !== undefined && (
                   <div className="progress-container">
                     <div className="progress-bar">
-                      <div 
-                        className="progress-fill" 
+                      <div
+                        className="progress-fill"
                         style={{ width: `${caseItem.progress}%` }}
                       ></div>
                     </div>
