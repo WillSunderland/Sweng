@@ -96,7 +96,7 @@ const WorkspacePage: React.FC = () => {
 =======
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import '../styles/WorkspacePage.css';
+import '../styles/Workspacepage.css';
 
 const WorkspacePage = () => {
   const navigate = useNavigate();
