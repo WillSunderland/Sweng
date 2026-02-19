@@ -1,8 +1,3 @@
-<<<<<<< HEAD
-//import React from 'react';
-=======
-import React from 'react';
->>>>>>> 89f298109 (Add all page components for frontend)
 import { useNavigate } from 'react-router-dom';
 import '../styles/LoginPage.css';
 

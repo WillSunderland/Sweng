@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import '../styles/Workspacepage.css';
@@ -93,31 +92,10 @@ const WorkspacePage: React.FC = () => {
     if (activeFilter === 'completed') return cases.filter((c: Case) => c.status === 'completed');
     if (activeFilter === 'high-priority') return cases.filter((c: Case) => c.status === 'review-needed');
     return cases;
-=======
-import React from 'react';
-import { useNavigate } from 'react-router-dom';
-import '../styles/Workspacepage.css';
-
-const WorkspacePage = () => {
-  const navigate = useNavigate();
-
-  const cases = [
-    { id: 1, title: "Commercial Tenancies Review", status: "complete" },
-    { id: 2, title: "Data Protection Analysis", status: "processing" },
-    { id: 3, title: "IP Audit", status: "review-needed" },
-    { id: 4, title: "Employment Contract", status: "draft" }
-  ];
-
-  const handleCaseClick = (caseItem) => {
-    if (caseItem.status === 'complete') navigate(`/report/${caseItem.id}`);
-    else if (caseItem.status === 'processing') navigate(`/trace/${caseItem.id}`);
-    else if (caseItem.status === 'review-needed') navigate(`/analysis/${caseItem.id}`);
->>>>>>> 89f298109 (Add all page components for frontend)
   };
 
   return (
     <div className="workspace-page">
-<<<<<<< HEAD
       {/* Left Sidebar */}
       <aside className="left-sidebar">
         <div className="logo-section">
@@ -182,9 +160,9 @@ const WorkspacePage = () => {
             <svg className="search-icon" width="20" height="20" viewBox="0 0 20 20" fill="none">
               <path d="M9 17A8 8 0 1 0 9 1a8 8 0 0 0 0 16zM18 18l-4.35-4.35" stroke="#9CA3AF" strokeWidth="2" strokeLinecap="round"/>
             </svg>
-            <input 
-              type="text" 
-              placeholder="Search briefs, case law or archive research..." 
+            <input
+              type="text"
+              placeholder="Search briefs, case law or archive research..."
               className="search-input"
             />
           </div>
@@ -205,7 +183,7 @@ const WorkspacePage = () => {
           <div className="page-actions">
             <div className="filter-sort-container">
               <div className="dropdown">
-                <button 
+                <button
                   className="btn-secondary"
                   onClick={() => {
                     setShowFilterDropdown(!showFilterDropdown);
@@ -228,7 +206,7 @@ const WorkspacePage = () => {
               </div>
 
               <div className="dropdown">
-                <button 
+                <button
                   className="btn-secondary"
                   onClick={() => {
                     setShowSortDropdown(!showSortDropdown);
@@ -257,25 +235,25 @@ const WorkspacePage = () => {
         </div>
 
         <div className="filter-tabs">
-          <button 
+          <button
             className={`filter-tab ${activeFilter === 'all-cases' ? 'active' : ''}`}
             onClick={() => setActiveFilter('all-cases')}
           >
             All Cases
           </button>
-          <button 
+          <button
             className={`filter-tab ${activeFilter === 'drafts' ? 'active' : ''}`}
             onClick={() => setActiveFilter('drafts')}
           >
             Drafts (1)
           </button>
-          <button 
+          <button
             className={`filter-tab ${activeFilter === 'completed' ? 'active' : ''}`}
             onClick={() => setActiveFilter('completed')}
           >
             Completed (1)
           </button>
-          <button 
+          <button
             className={`filter-tab ${activeFilter === 'high-priority' ? 'active' : ''}`}
             onClick={() => setActiveFilter('high-priority')}
           >
@@ -286,8 +264,8 @@ const WorkspacePage = () => {
         <div className="cases-container">
           <div className="cases-grid">
             {getFilteredCases().map((caseItem) => (
-              <div 
-                key={caseItem.id} 
+              <div
+                key={caseItem.id}
                 className="case-card"
                 onClick={() => handleCaseClick(caseItem)}
               >
@@ -326,8 +304,8 @@ const WorkspacePage = () => {
                 {caseItem.progress !== undefined && (
                   <div className="progress-container">
                     <div className="progress-bar">
-                      <div 
-                        className="progress-fill" 
+                      <div
+                        className="progress-fill"
                         style={{ width: `${caseItem.progress}%` }}
                       ></div>
                     </div>
@@ -429,44 +407,6 @@ const WorkspacePage = () => {
               <path d="M3 7h8M8 3l4 4-4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
             </svg>
           </div>
-=======
-      <aside className="sidebar">
-        <h3 onClick={() => navigate('/')}>RWS Propylon</h3>
-        <nav>
-          <div className="nav-item active">Workspace</div>
-          <div className="nav-item">Drafts</div>
-          <div className="nav-item" onClick={() => navigate('/history')}>History</div>
-        </nav>
-      </aside>
-
-      <main className="main-content">
-        <header>
-          <h1>Active Research Cases</h1>
-          <input type="text" placeholder="Search..." />
-        </header>
-
-        <div className="cases-grid">
-          {cases.map(c => (
-            <div key={c.id} className="case-card" onClick={() => handleCaseClick(c)}>
-              <span className={`status ${c.status}`}>{c.status}</span>
-              <h3>{c.title}</h3>
-              <button className="btn btn-primary">Open</button>
-            </div>
-          ))}
-        </div>
-
-        <button className="btn btn-primary">+ New Case</button>
-      </main>
-
-      <aside className="right-sidebar">
-        <div className="sidebar-section">
-          <h4>Trends</h4>
-          <p>AI Efficiency Laws trending globally</p>
-        </div>
-        <div className="sidebar-section">
-          <h4>Activity</h4>
-          <p>Legislation update detected</p>
->>>>>>> 89f298109 (Add all page components for frontend)
         </div>
       </aside>
     </div>
