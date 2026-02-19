@@ -40,6 +40,8 @@ frontend-build:
   image: node:20-alpine
   tags:
     - docker
+  needs:
+    - frontend-lint
   before_script:
     - cd frontend
     - npm ci
