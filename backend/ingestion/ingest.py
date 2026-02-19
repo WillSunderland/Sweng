@@ -16,7 +16,9 @@ def strip_html(text):
     return re.sub(r"<[^>]+>", "", text).strip()
 
 
-def extract_text_from_congress_bill(bill_detail, summaries, actions=None, subjects=None, state_code="TX"):
+def extract_text_from_congress_bill(
+    bill_detail, summaries, actions=None, subjects=None, state_code="TX"
+):
     """
     Convert Congress.gov bill detail + summaries into:
       - meta: bill metadata
@@ -239,7 +241,11 @@ def main():
                 json.dump(summaries, f, indent=2)
 
         meta, text = extract_text_from_congress_bill(
-            bill_detail, summaries, actions=actions, subjects=subjects, state_code=settings["STATE_CODE"]
+            bill_detail,
+            summaries,
+            actions=actions,
+            subjects=subjects,
+            state_code=settings["STATE_CODE"],
         )
 
         if not text:

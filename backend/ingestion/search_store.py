@@ -147,10 +147,7 @@ class SearchStore:
         return self.client.indices.exists(index=self.index_name)
 
     def bill_exists(self, bill_id):
-        body = {
-            "size": 0,
-            "query": {"term": {"bill_id": bill_id}}
-        }
+        body = {"size": 0, "query": {"term": {"bill_id": bill_id}}}
         res = self.client.search(index=self.index_name, body=body)
         return res["hits"]["total"]["value"] > 0
 
