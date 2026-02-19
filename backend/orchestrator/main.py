@@ -57,23 +57,23 @@ def get_iso_timestamp():
 # ─── URL resolution helpers ───────────────────────────────────────────────────
 
 BILL_TYPE_MAP = {
-    "hr":      "house-bill",
-    "s":       "senate-bill",
-    "hjres":   "house-joint-resolution",
-    "sjres":   "senate-joint-resolution",
-    "hres":    "house-resolution",
-    "sres":    "senate-resolution",
+    "hr": "house-bill",
+    "s": "senate-bill",
+    "hjres": "house-joint-resolution",
+    "sjres": "senate-joint-resolution",
+    "hres": "house-resolution",
+    "sres": "senate-resolution",
     "hconres": "house-concurrent-resolution",
     "sconres": "senate-concurrent-resolution",
 }
 
 BILL_LABEL_MAP = {
-    "hr":      "H.R.",
-    "s":       "S.",
-    "hjres":   "H.J.Res.",
-    "sjres":   "S.J.Res.",
-    "hres":    "H.Res.",
-    "sres":    "S.Res.",
+    "hr": "H.R.",
+    "s": "S.",
+    "hjres": "H.J.Res.",
+    "sjres": "S.J.Res.",
+    "hres": "H.Res.",
+    "sres": "S.Res.",
     "hconres": "H.Con.Res.",
     "sconres": "S.Con.Res.",
 }
@@ -88,7 +88,9 @@ def congress_url_from_id(bill_id: Optional[str]) -> Optional[str]:
     if not bill_id:
         return None
     base = re.sub(r"_\d+$", "", bill_id)
-    m = re.match(r"^(\d+)-(hr|s|hjres|sjres|hres|sres|hconres|sconres)-(\d+)$", base, re.I)
+    m = re.match(
+        r"^(\d+)-(hr|s|hjres|sjres|hres|sres|hconres|sconres)-(\d+)$", base, re.I
+    )
     if not m:
         return None
     congress, bill_type, number = m.group(1), m.group(2).lower(), m.group(3)
@@ -174,6 +176,7 @@ async def create_run(request: CreateRunRequest):
     RUN_STORE[run_id]["status"] = RUN_STATUS_COMPLETED
 
     # Build source store entries for this run
+    # Include every field the frontend might use to resolve a URL or build a citation
     documents = result.get("documents", []) or []
     source_ids = []
     for doc in documents:
@@ -242,12 +245,14 @@ async def get_run(run_id: str):
         if source_id and source_id in SOURCE_STORE:
             stored_url = SOURCE_STORE[source_id].get("url")
 
-        enriched_docs.append({
-            **doc,
-            "id": source_id,
-            # Expose URL at the top level for easy consumption
-            "url": stored_url or doc.get("url"),
-        })
+        enriched_docs.append(
+            {
+                **doc,
+                "id": source_id,
+                # Expose URL at the top level for easy consumption
+                "url": stored_url or doc.get("url"),
+            }
+        )
 
     return {
         "runId": run_id,
