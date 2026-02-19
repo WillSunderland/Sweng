@@ -19,8 +19,6 @@ function App() {
         <Route path="/" element={<LandingPage />} />
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
-        <Route path="/login" element={<Login />} />
-        <Route path="/register" element={<Register />} />
         <Route path="/workspace" element={<WorkspacePage />} />
         <Route path="/report/:id" element={<ReportViewPage />} />
         <Route path="/trace/:id" element={<ExecutionTracePage />} />
