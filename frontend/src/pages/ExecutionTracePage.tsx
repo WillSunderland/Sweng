@@ -1,8 +1,9 @@
-import { useNavigate} from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import '../styles/ExecutionTracePage.css';
 
 const ExecutionTracePage = () => {
   const navigate = useNavigate();
+
 
   const steps = [
     { id: 1, title: "INITIALIZING AGENT", status: "complete", time: "0.157s" },

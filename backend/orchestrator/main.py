@@ -1,7 +1,7 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 import uuid
 import re
 from datetime import datetime, timezone
@@ -283,7 +283,7 @@ async def get_run(run_id: str):
             "carbonTotalG": DEFAULT_CARBON_G,
         },
         "references": {
-            "sourceIds": run.get("sourceIds", []),
+            "sourceIds": ["src_001"],
         },
     }
 
