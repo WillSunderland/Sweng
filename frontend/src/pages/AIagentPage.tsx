@@ -131,7 +131,7 @@ function cleanText(raw: string): string {
     // Remove ALL bracket groups: [anything] — catches [*], [**], [^], [^1], [id], etc.
     .replace(/\[[^\]]*\]/g, '')
     // Remove parenthetical noise markers: (*), (**), (^), (†), (1), etc.
-    .replace(/\([\*\^†‡§¶\d]+\)/g, '')
+    .replace(/\([*^†‡§¶\d]+\)/g, '')
     // Remove stray asterisks (1 or more) that remain after bracket removal
     .replace(/\*+/g, '')
     // Remove stray carets

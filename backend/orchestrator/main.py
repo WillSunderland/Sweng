@@ -111,7 +111,9 @@ def congress_url_from_fields(
     bill_path = BILL_TYPE_MAP.get(bill_type.lower())
     if not bill_path:
         return None
-    return f"https://www.congress.gov/bill/{congress}th-congress/{bill_path}/{bill_number}"
+    return (
+        f"https://www.congress.gov/bill/{congress}th-congress/{bill_path}/{bill_number}"
+    )
 
 
 def resolve_source_url(source: dict) -> Optional[str]:
