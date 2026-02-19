@@ -100,13 +100,6 @@ const BASE_URL = 'http://localhost:8000';
 const POLL_INTERVAL_MS = 1500;
 const POLL_TIMEOUT_MS = 60_000;
 
-const SUGGESTED_PROMPTS: string[] = [
-  'Summarize all active cases with review needed',
-  'What are the key risks in the Commercial Tenancies case?',
-  'Draft a brief on EU Data Protection compliance',
-  'Compare IP audit findings with industry standards',
-];
-
 interface ResearchTask {
   icon: 'regulatory' | 'compliance' | 'research' | 'contract';
   title: string;
