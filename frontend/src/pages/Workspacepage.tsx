@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import '../styles/WorkspacePage.css';
+import '../styles/Workspacepage.css';
 
 type CaseStatus = 'review-needed' | 'processing' | 'completed' | 'draft';
 type ActionType = 'analysis' | 'trace' | 'report' | 'draft';
