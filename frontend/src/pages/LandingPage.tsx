@@ -3,6 +3,8 @@ import { Navigation } from '../components/landing/Navigation';
 import { HeroSection } from '../components/landing/HeroSection';
 import { StatsBar } from '../components/landing/StatsBar';
 import { FeaturesSection } from '../components/landing/FeaturesSection';
+import { ImpactTraceShowcase } from '../components/landing/ImpactTraceShowcase';
+import { DomainKnowledgeSection } from '../components/landing/DomainKnowledgeSection';
 import { CTASection } from '../components/landing/CTASection';
 import { Footer } from '../components/landing/Footer';
 import { AuthModal } from '../components/landing/AuthModal';
@@ -41,7 +43,9 @@ const LandingPage: React.FC = () => {
         onRequestDemo={() => setAuthModal('register')}
       />
       <StatsBar />
+      <ImpactTraceShowcase />
       <FeaturesSection />
+      <DomainKnowledgeSection />
       <CTASection onStartTrial={() => setAuthModal('register')} />
       <Footer />
 
