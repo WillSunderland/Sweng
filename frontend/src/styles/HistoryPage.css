@@ -326,6 +326,13 @@
   color: #1d4ed8;
 }
 
+.history-filter-btn.active-sort {
+  border-color: #93c5fd;
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-weight: 600;
+}
+
 .timeline h2 {
   margin-bottom: 14px;
   margin-top: 8px;
