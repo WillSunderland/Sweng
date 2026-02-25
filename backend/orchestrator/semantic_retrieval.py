@@ -112,3 +112,48 @@ class SemanticRetriever:
         qvec = self.embed_query(query)
         raw = self.vector_search(qvec, top_k=top_k, state=state)
         return self.format_hits(raw)
+    
+    
+    def get_index_stats(self) -> Dict[str, Any]:
+        """Return stats about what's in the index."""
+        client = self.get_es_client()
+
+        body = {
+            "size": 0,
+            "aggs": {
+                "unique_bills": {
+                    "cardinality": {"field": "bill_id"}
+                },
+                "bill_types": {
+                    "terms": {"field": "bill_type", "size": 20}
+                },
+                "policy_areas": {
+                    "terms": {"field": "policy_area", "size": 50}
+                },
+                "sessions": {
+                    "terms": {"field": "session", "size": 10}
+                }
+            }
+        }
+
+        res = client.search(index=self.index_name, body=body)
+
+        total_chunks = res["hits"]["total"]["value"]
+        aggs = res.get("aggregations", {})
+
+        return {
+            "total_chunks": total_chunks,
+            "unique_bills": aggs.get("unique_bills", {}).get("value", 0),
+            "bill_types": [
+                {"type": b["key"], "count": b["doc_count"]}
+                for b in aggs.get("bill_types", {}).get("buckets", [])
+            ],
+            "policy_areas": [
+                {"area": b["key"], "count": b["doc_count"]}
+                for b in aggs.get("policy_areas", {}).get("buckets", [])
+            ],
+            "sessions": [
+                {"session": b["key"], "count": b["doc_count"]}
+                for b in aggs.get("sessions", {}).get("buckets", [])
+            ],
+        }
