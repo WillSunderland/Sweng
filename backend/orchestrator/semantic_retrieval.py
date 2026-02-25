@@ -112,8 +112,7 @@ class SemanticRetriever:
         qvec = self.embed_query(query)
         raw = self.vector_search(qvec, top_k=top_k, state=state)
         return self.format_hits(raw)
-    
-    
+
     def get_index_stats(self) -> Dict[str, Any]:
         """Return stats about what's in the index."""
         client = self.get_es_client()
@@ -121,19 +120,11 @@ class SemanticRetriever:
         body = {
             "size": 0,
             "aggs": {
-                "unique_bills": {
-                    "cardinality": {"field": "bill_id"}
-                },
-                "bill_types": {
-                    "terms": {"field": "bill_type", "size": 20}
-                },
-                "policy_areas": {
-                    "terms": {"field": "policy_area", "size": 50}
-                },
-                "sessions": {
-                    "terms": {"field": "session", "size": 10}
-                }
-            }
+                "unique_bills": {"cardinality": {"field": "bill_id"}},
+                "bill_types": {"terms": {"field": "bill_type", "size": 20}},
+                "policy_areas": {"terms": {"field": "policy_area", "size": 50}},
+                "sessions": {"terms": {"field": "session", "size": 10}},
+            },
         }
 
         res = client.search(index=self.index_name, body=body)
