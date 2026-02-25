@@ -112,7 +112,6 @@ class SemanticRetriever:
     def search(
         self, query: str, top_k: int = 5, state: Optional[str] = None
     ) -> List[Dict[str, Any]]:
-        
 
         qvec = self.embed_query(query)
         raw = self.vector_search(qvec, fetch_k=50, state=state)
