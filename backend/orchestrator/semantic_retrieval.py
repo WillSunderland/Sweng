@@ -4,6 +4,7 @@ from typing import Any, Dict, List, Optional
 
 from elasticsearch import Elasticsearch
 from sentence_transformers import SentenceTransformer
+from mmr import mmr_rerank
 
 
 class SemanticRetriever:
@@ -50,18 +51,18 @@ class SemanticRetriever:
         return vec[0].tolist()
 
     def vector_search(
-        self, query_vector: List[float], top_k: int = 5, state: Optional[str] = None
+        self, query_vector: List[float], fetch_k: int = 50, state: Optional[str] = None
     ) -> Dict[str, Any]:
         client = self.get_es_client()
         state_filter = state or self.state_code
 
         body: Dict[str, Any] = {
-            "size": top_k,
+            "size": fetch_k,
             "knn": {
                 "field": "embedding",
                 "query_vector": query_vector,
-                "k": top_k,
-                "num_candidates": max(50, top_k * 10),
+                "k": fetch_k,
+                "num_candidates": max(50, fetch_k * 10),
             },
             "_source": [
                 "bill_id",
@@ -74,6 +75,7 @@ class SemanticRetriever:
                 "latest_action",
                 "chunk_id",
                 "chunk_text",
+                "embedding",
             ],
         }
 
@@ -102,6 +104,7 @@ class SemanticRetriever:
                     "state": src.get("state"),
                     "chunk_id": src.get("chunk_id"),
                     "chunk_text": src.get("chunk_text"),
+                    "embedding": src.get("embedding"),
                 }
             )
         return results
@@ -109,6 +112,9 @@ class SemanticRetriever:
     def search(
         self, query: str, top_k: int = 5, state: Optional[str] = None
     ) -> List[Dict[str, Any]]:
+        
+
         qvec = self.embed_query(query)
-        raw = self.vector_search(qvec, top_k=top_k, state=state)
-        return self.format_hits(raw)
+        raw = self.vector_search(qvec, fetch_k=50, state=state)
+        chunks = self.format_hits(raw)
+        return mmr_rerank(chunks, query_embedding=qvec, top_k=top_k)
