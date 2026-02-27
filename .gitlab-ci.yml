@@ -60,9 +60,14 @@ backend-test:
     - pip install pytest pytest-cov
   script:
     - |
-      PYTHONPATH=. pytest backend/ --ignore=backend/ingestion/test_queries.py --cov=backend --cov-report=term-missing --cov-report=xml:coverage.xml --junitxml=report.xml -v
-      EXIT=$?
-      [ $EXIT -eq 5 ] && exit 0 || exit $EXIT
+      PYTHONPATH=. pytest backend/ --ignore=backend/ingestion/test_queries.py --cov=backend --cov-report=term-missing --cov-report=xml:coverage.xml --junitxml=report.xml -v || EXIT_CODE=$?
+      EXIT_CODE=${EXIT_CODE:-0}
+      if [ "$EXIT_CODE" -eq 5 ]; then
+        echo "No tests collected (exit 5) — treating as success."
+        exit 0
+      else
+        exit "$EXIT_CODE"
+      fi
   coverage: '/(?i)total.*? (100(?:\.0+)?\%|[1-9]?\d(?:\.\d+)?\%)$/'
   artifacts:
     when: always
