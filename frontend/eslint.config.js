@@ -38,4 +38,11 @@ export default defineConfig([
       'import/no-unresolved': ['error', { caseSensitive: true }],
     },
   },
+  {
+    files: ['**/*.test.ts', '**/*.test.tsx'],
+    rules: {
+      'import/no-unresolved': 'off',
+      '@typescript-eslint/no-unused-vars': 'off',
+    },
+  },
 ])
