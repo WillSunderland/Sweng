@@ -43,9 +43,6 @@ frontend-lint:
     - npm ci
   script:
     - npm run lint
-  rules:
-    - changes:
-        - frontend/**/*
 
 # ============================================================
 # STAGE 2: TEST
@@ -106,9 +103,6 @@ frontend-test:
     reports:
       junit: report.xml
     expire_in: 7 days
-  rules:
-    - changes:
-        - frontend/**/*
 
 # ============================================================
 # STAGE 3: BUILD
@@ -145,6 +139,3 @@ frontend-build:
     - npm ci
   script:
     - npm run build
-  rules:
-    - changes:
-        - frontend/**/*
