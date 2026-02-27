@@ -1,8 +1,8 @@
 import logging
 import httpx
 
-from config import getSettings
-from services.llm_client import BaseLLMClient, LLMResponse
+from orchestrator.config import getSettings
+from orchestrator.services.llm_client import BaseLLMClient, LLMResponse
 
 logger = logging.getLogger(__name__)
 
