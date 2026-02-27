@@ -17,7 +17,7 @@ class Settings(BaseSettings):
     nvidia_max_retries: int = 3
 
     # HuggingFace Local Server
-    hf_server_url: str = "http://hf-server:8000"
+    hf_server_url: str = "http://localhost:8002"
     hf_model: str = "gpt2"
     hf_timeout: int = 60
 
