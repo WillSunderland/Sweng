@@ -4,6 +4,7 @@ Unit tests for backend/orchestrator/api/errors/errorMapping.py
 These tests are intentionally dependency-free (no Django, no DRF, no DB)
 so they run cleanly in the CI pipeline with only pytest installed.
 """
+
 import sys
 import os
 
