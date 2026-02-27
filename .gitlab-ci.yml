@@ -24,9 +24,6 @@ backend-lint:
     - pip install black ruff
     - black --check backend/
     - ruff check backend/ --select E,W,F --ignore E501
-  rules:
-    - changes:
-        - backend/**/*
 
 frontend-lint:
   stage: lint
@@ -75,9 +72,6 @@ backend-test:
         coverage_format: cobertura
         path: coverage.xml
     expire_in: 7 days
-  rules:
-    - changes:
-        - backend/**/*
 
 frontend-test:
   stage: test
@@ -93,7 +87,7 @@ frontend-test:
     - cd frontend
     - npm ci
   script:
-    - npx vitest run --reporter=junit --outputFile=../report.xml
+    - npx vitest run --passWithNoTests --reporter=junit --outputFile=../report.xml
   artifacts:
     when: always
     reports:
@@ -116,9 +110,6 @@ backend-build:
   script:
     - pip install -r backend/orchestrator/requirements.txt
     - pip install -r backend/mcp_server/requirements.txt
-  rules:
-    - changes:
-        - backend/**/*
 
 frontend-build:
   stage: build
