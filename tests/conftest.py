@@ -3,6 +3,7 @@ from unittest.mock import AsyncMock, MagicMock
 from app.graph.state import GraphState
 from app.services.llm_client import LLMResponse
 
+
 @pytest.fixture
 def mock_search_results():
     return [
@@ -26,8 +27,8 @@ def mock_search_results():
                 "policy_area": "Taxation",
                 "bill_type": "HB",
                 "bill_number": "123",
-                "chunk_text": "Section 5: All individuals earning above $80,000 shall be subject to..."
-            }
+                "chunk_text": "Section 5: All individuals earning above $80,000 shall be subject to...",
+            },
         },
         {
             "bill_id": "NV-SB-456",
@@ -49,8 +50,8 @@ def mock_search_results():
                 "policy_area": "Taxation",
                 "bill_type": "SB",
                 "bill_number": "456",
-                "chunk_text": "The standard deduction for single filers shall be adjusted to..."
-            }
+                "chunk_text": "The standard deduction for single filers shall be adjusted to...",
+            },
         },
         {
             "bill_id": "NY-AB-789",
@@ -72,10 +73,11 @@ def mock_search_results():
                 "policy_area": "Taxation",
                 "bill_type": "AB",
                 "bill_number": "789",
-                "chunk_text": "Residents of New York State with annual income exceeding $100,000..."
-            }
-        }
+                "chunk_text": "Residents of New York State with annual income exceeding $100,000...",
+            },
+        },
     ]
+
 
 @pytest.fixture
 def mock_nvidia_response():
@@ -85,8 +87,9 @@ def mock_nvidia_response():
         provider="nvidia",
         prompt_tokens=10,
         completion_tokens=20,
-        total_tokens=30
+        total_tokens=30,
     )
+
 
 @pytest.fixture
 def mock_hf_response():
@@ -96,8 +99,9 @@ def mock_hf_response():
         provider="huggingface",
         prompt_tokens=15,
         completion_tokens=25,
-        total_tokens=40
+        total_tokens=40,
     )
+
 
 @pytest.fixture
 def sample_state(mock_search_results):
@@ -111,5 +115,5 @@ def sample_state(mock_search_results):
         "model_used": None,
         "provider_used": None,
         "token_count": 0,
-        "route_decision": None
+        "route_decision": None,
     }

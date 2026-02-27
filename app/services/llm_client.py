@@ -6,9 +6,10 @@ from typing import Optional
 @dataclass
 class LLMResponse:
     """Standardised response from any LLM provider."""
+
     content: str
     model: str
-    provider: str                   # "nvidia" or "huggingface"
+    provider: str  # "nvidia" or "huggingface"
     prompt_tokens: int = 0
     completion_tokens: int = 0
     total_tokens: int = 0

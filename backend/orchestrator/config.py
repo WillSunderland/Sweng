@@ -18,7 +18,7 @@ class Settings(BaseSettings):
 
     # HuggingFace Local Server
     hf_server_url: str = "http://localhost:8002"
-    hf_model: str = "gpt2"
+    hf_model: str = "distilgpt2"
     hf_timeout: int = 60
 
     # Routing
