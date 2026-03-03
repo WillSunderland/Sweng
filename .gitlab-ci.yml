@@ -43,6 +43,8 @@ backend-unit-tests:
   image: python:3.11-slim
   tags:
     - docker
+  variables:
+    PYTHONPATH: "."
   cache:
     key: pytest
     paths:
@@ -58,6 +60,8 @@ backend-integration-tests:
   image: python:3.11-slim
   tags:
     - docker
+  variables:
+    PYTHONPATH: "."
   cache:
     key: pytest
     paths:
