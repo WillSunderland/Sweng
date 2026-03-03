@@ -1,5 +1,6 @@
 stages:
   - lint
+  - test
   - build
 
 # ---- Lint Stage ----
@@ -34,6 +35,53 @@ backend-build:
   script:
     - pip install -r backend/orchestrator/requirements.txt
     - pip install -r backend/mcp_server/requirements.txt
+
+# ---- Test Stage ----
+
+backend-unit-tests:
+  stage: test
+  image: python:3.11-slim
+  tags:
+    - docker
+  variables:
+    PYTHONPATH: "."
+  cache:
+    key: pytest
+    paths:
+      - .pytest_cache/
+      - .testmondata
+  script:
+    - pip install -r requirements.txt
+    - pip install pytest pytest-testmon
+    - pytest --testmon -m "not integration"
+
+backend-integration-tests:
+  stage: test
+  image: python:3.11-slim
+  tags:
+    - docker
+  variables:
+    PYTHONPATH: "."
+  cache:
+    key: pytest
+    paths:
+      - .pytest_cache/
+      - .testmondata
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+    - if: '$CI_MERGE_REQUEST_TARGET_BRANCH_NAME == "main"'
+  script:
+    - pip install -r requirements.txt
+    - pip install -r backend/orchestrator/requirements.txt
+    - pip install pytest pytest-testmon
+    - |
+      pytest --testmon -m integration
+      status=$?
+      if [ $status -eq 5 ]; then
+        echo "No integration tests collected."
+        exit 0
+      fi
+      exit $status
 
 frontend-build:
   stage: build
