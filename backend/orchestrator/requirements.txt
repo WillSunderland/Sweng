@@ -7,3 +7,4 @@ openai
 httpx
 tenacity
 pydantic-settings
+numpy

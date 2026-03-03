@@ -14,7 +14,9 @@ print(f"\n=== Bills for {members[0]['name']} ===")
 bills = client.get_member_bills(bio_id, limit=5)
 print(f"Found {len(bills)} bills")
 for b in bills[:3]:
-    print(f"  {b.get('congress')}-{b.get('type')}-{b.get('number')}: {b.get('title','')[:80]}")
+    print(
+        f"  {b.get('congress')}-{b.get('type')}-{b.get('number')}: {b.get('title','')[:80]}"
+    )
 
 if bills:
     b = bills[0]

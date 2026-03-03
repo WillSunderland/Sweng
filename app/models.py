@@ -14,7 +14,9 @@ class QueryRequest(BaseModel):
         min_length=MIN_QUERY_LENGTH,
         max_length=MAX_QUERY_LENGTH,
         description="Natural language search query",
-        json_schema_extra={"example": "What are the latest regulations on data privacy?"},
+        json_schema_extra={
+            "example": "What are the latest regulations on data privacy?"
+        },
     )
 
 
