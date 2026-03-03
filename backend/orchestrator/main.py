@@ -6,6 +6,7 @@ import uuid
 import re
 from datetime import datetime, timezone
 from graph import app as graph_app
+from semantic_retrieval import SemanticRetriever
 
 app = FastAPI(title="Orchestrator API")
 
@@ -299,6 +300,15 @@ async def get_source(source_id: str):
         source["url"] = resolve_source_url(source)
 
     return source
+
+
+@app.get("/api/stats")
+async def get_stats():
+    try:
+        retriever = SemanticRetriever()
+        return retriever.get_index_stats()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get stats: {e}")
 
 
 @app.get("/health")
