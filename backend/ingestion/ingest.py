@@ -16,7 +16,9 @@ def strip_html(text):
     return re.sub(r"<[^>]+>", "", text).strip()
 
 
-def extract_text_from_congress_bill(bill_detail, summaries, state_code="TX"):
+def extract_text_from_congress_bill(
+    bill_detail, summaries, actions=None, subjects=None, state_code="TX"
+):
     """
     Convert Congress.gov bill detail + summaries into:
       - meta: bill metadata
@@ -64,6 +66,19 @@ def extract_text_from_congress_bill(bill_detail, summaries, state_code="TX"):
     # Fallback if no summaries available
     if len(text_parts) <= 2 and latest_action:
         text_parts.append(latest_action)
+
+    if subjects:
+        leg_subjects = subjects.get("legislativeSubjects", [])
+        if leg_subjects:
+            names = [s.get("name", "") for s in leg_subjects if s.get("name")]
+            if names:
+                text_parts.append("Subjects: " + ", ".join(names))
+
+    if actions:
+        for action in actions[:10]:
+            action_text = action.get("text", "").strip()
+            if action_text:
+                text_parts.append(action_text)
 
     text = "\n".join(text_parts).strip()
     return meta, text
@@ -191,6 +206,11 @@ def main():
 
         print(f"\n[{i+1}/{len(bills_to_ingest)}] Processing {bill_key}...")
 
+        bill_id = f"{congress}-{bill_type}-{bill_number}"
+        if store.index_exists() and store.bill_exists(bill_id):
+            print(f"  Skipping {bill_key} — already indexed")
+            continue
+
         try:
             bill_detail = client.get_bill_detail(congress, bill_type, bill_number)
         except Exception as e:
@@ -203,6 +223,16 @@ def main():
             print(f"  Warning: Error fetching summaries for {bill_key}: {e}")
             summaries = []
 
+        try:
+            actions = client.get_bill_actions(congress, bill_type, bill_number)
+        except Exception:
+            actions = []
+
+        try:
+            subjects = client.get_bill_subjects(congress, bill_type, bill_number)
+        except Exception:
+            subjects = {}
+
         # Save first bill's raw responses for debugging
         if i == 0:
             with open("sample_congress_bill.json", "w", encoding="utf-8") as f:
@@ -211,7 +241,11 @@ def main():
                 json.dump(summaries, f, indent=2)
 
         meta, text = extract_text_from_congress_bill(
-            bill_detail, summaries, state_code=settings["STATE_CODE"]
+            bill_detail,
+            summaries,
+            actions=actions,
+            subjects=subjects,
+            state_code=settings["STATE_CODE"],
         )
 
         if not text:
@@ -266,9 +300,6 @@ def main():
     print("State:", settings["STATE_CODE"])
     print("Congress:", settings["CONGRESS_NUMBER"])
     print("Saved:")
-    print("  - sample_congress_members.json   (first 3 TX members)")
-    print("  - sample_congress_bill.json      (first bill detail)")
-    print("  - sample_congress_summaries.json (first bill summaries)")
 
 
 if __name__ == "__main__":

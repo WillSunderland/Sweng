@@ -27,7 +27,9 @@ async def lifespan(app: FastAPI):
 
     settings = getSettings()
     _opensearchClient = createOpensearchClient(settings)
-    _compiledGraph = buildGraph(client=_opensearchClient, index=settings.opensearch_index)
+    _compiledGraph = buildGraph(
+        client=_opensearchClient, index=settings.opensearch_index
+    )
 
     logger.info("LangGraph state machine compiled successfully")
     logger.info(
@@ -58,7 +60,9 @@ app = FastAPI(
 )
 
 
-@app.get("/health", response_model=HealthResponse, tags=["Status"], summary="Health check")
+@app.get(
+    "/health", response_model=HealthResponse, tags=["Status"], summary="Health check"
+)
 async def health():
     isConnected = False
     if _opensearchClient:
@@ -71,10 +75,10 @@ async def health():
     # LLM health checks
     from app.services.nvidia_client import NvidiaLLMClient
     from app.services.hf_client import HuggingFaceLLMClient
-    
+
     nv_client = NvidiaLLMClient()
     hf_client_inst = HuggingFaceLLMClient()
-    
+
     nvidia_ok = await nv_client.health_check()
     hf_ok = await hf_client_inst.health_check()
 
@@ -107,14 +111,14 @@ async def query_endpoint(request: QueryRequest):
 
         # Map graph output to new response model
         response_data = result.get("response", {})
-        
+
         return QueryResponse(
             answer=response_data.get("answer", "No answer generated."),
             sources=[SourceInfo(**s) for s in response_data.get("sources", [])],
             model_used=response_data.get("model_used"),
             provider=response_data.get("provider"),
             token_count=response_data.get("token_count", 0),
-            error=response_data.get("error")
+            error=response_data.get("error"),
         )
 
     except Exception as exc:

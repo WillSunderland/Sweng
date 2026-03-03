@@ -48,7 +48,9 @@ This API wraps HuggingFace's `transformers.pipeline` and provides:
 
 MAX_CACHE_ITEMS = int(os.environ.get("MAX_CACHE_ITEMS", "8"))
 DEFAULT_TIMEOUT_MS = int(os.environ.get("DEFAULT_TIMEOUT_MS", "30000"))
-DEFAULT_TRUST_REMOTE_CODE = os.environ.get("ALLOW_TRUST_REMOTE_CODE", "false").lower() in ("1", "true", "yes")
+DEFAULT_TRUST_REMOTE_CODE = os.environ.get(
+    "ALLOW_TRUST_REMOTE_CODE", "false"
+).lower() in ("1", "true", "yes")
 MAX_INPUT_CHARS = int(os.environ.get("MAX_INPUT_CHARS", "10000"))
 
 _runner_cache: OrderedDict[str, Any] = OrderedDict()
@@ -115,7 +117,9 @@ class CanonicalRequest(BaseModel):
     inputs: Union[str, List[str]] = Field(
         ...,
         description="Text input(s) to process",
-        json_schema_extra={"example": "The tower is 324 metres tall and was built in 1889. It is located in Paris, France."},
+        json_schema_extra={
+            "example": "The tower is 324 metres tall and was built in 1889. It is located in Paris, France."
+        },
     )
     params: Optional[Dict[str, Any]] = Field(
         default=None,
@@ -158,7 +162,9 @@ def _make_key(capability: str, repo_id: str, revision: Optional[str]) -> str:
     return f"{capability}::{repo_id}::{revision or ''}"
 
 
-def _validate_input(inputs: Union[str, List[str]], truncate: bool = False) -> Union[str, List[str]]:
+def _validate_input(
+    inputs: Union[str, List[str]], truncate: bool = False
+) -> Union[str, List[str]]:
     if isinstance(inputs, str):
         if len(inputs) > MAX_INPUT_CHARS:
             if truncate:
@@ -178,7 +184,9 @@ def _validate_input(inputs: Union[str, List[str]], truncate: bool = False) -> Un
     return validated
 
 
-def _safe_inference(runner: Any, inputs: Union[str, List[str]], params: Dict[str, Any]) -> Any:
+def _safe_inference(
+    runner: Any, inputs: Union[str, List[str]], params: Dict[str, Any]
+) -> Any:
     try:
         return runner(inputs, **params)
     except RuntimeError as e:
@@ -242,10 +250,14 @@ def load_runner(
                 trust_remote_code=allow_trust_remote_code,
             )
         except ValueError as e:
-            logger.info(json.dumps({"event": "load_failed", "key": key, "error": str(e)}))
+            logger.info(
+                json.dumps({"event": "load_failed", "key": key, "error": str(e)})
+            )
             raise RuntimeError(ERRORS["UNSUPPORTED_CAPABILITY"])
         except Exception as e:
-            logger.info(json.dumps({"event": "load_failed", "key": key, "error": str(e)}))
+            logger.info(
+                json.dumps({"event": "load_failed", "key": key, "error": str(e)})
+            )
             raise RuntimeError(ERRORS["MODEL_NOT_FOUND"])
 
         with _cache_lock:
@@ -253,11 +265,15 @@ def load_runner(
             _runner_cache[key] = runner
             _runner_cache.move_to_end(key)
 
-        logger.info(json.dumps({
-            "event": "load_ok",
-            "key": key,
-            "has_gpu": torch.cuda.is_available(),
-        }))
+        logger.info(
+            json.dumps(
+                {
+                    "event": "load_ok",
+                    "key": key,
+                    "has_gpu": torch.cuda.is_available(),
+                }
+            )
+        )
 
         return runner, False
 
@@ -359,14 +375,32 @@ async def test(
             "result": output,
         }
     except ValueError as e:
-        raise HTTPException(status_code=400, detail={"status": "error", "errorCode": "INPUT_TOO_LONG", "message": str(e)})
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "status": "error",
+                "errorCode": "INPUT_TOO_LONG",
+                "message": str(e),
+            },
+        )
     except RuntimeError as e:
         error_msg = str(e)
         if error_msg == ERRORS["OUT_OF_MEMORY"]:
-            raise HTTPException(status_code=413, detail={"status": "error", "errorCode": "OUT_OF_MEMORY", "message": error_msg})
-        raise HTTPException(status_code=500, detail={"status": "error", "message": error_msg})
+            raise HTTPException(
+                status_code=413,
+                detail={
+                    "status": "error",
+                    "errorCode": "OUT_OF_MEMORY",
+                    "message": error_msg,
+                },
+            )
+        raise HTTPException(
+            status_code=500, detail={"status": "error", "message": error_msg}
+        )
     except Exception as e:
-        raise HTTPException(status_code=500, detail={"status": "error", "message": str(e)})
+        raise HTTPException(
+            status_code=500, detail={"status": "error", "message": str(e)}
+        )
 
 
 class RunResponse(BaseModel):
@@ -409,14 +443,20 @@ async def run_request(req: CanonicalRequest):
     try:
         validated_inputs = _validate_input(req.inputs, truncate=False)
     except ValueError as e:
-        logger.info(json.dumps({
-            "request_id": request_id,
-            "repo_id": req.repo_id,
-            "capability": req.capability,
-            "error": str(e),
-            "error_code": "INPUT_TOO_LONG",
-        }))
-        raise HTTPException(status_code=400, detail={"errorCode": "INPUT_TOO_LONG", "message": str(e)})
+        logger.info(
+            json.dumps(
+                {
+                    "request_id": request_id,
+                    "repo_id": req.repo_id,
+                    "capability": req.capability,
+                    "error": str(e),
+                    "error_code": "INPUT_TOO_LONG",
+                }
+            )
+        )
+        raise HTTPException(
+            status_code=400, detail={"errorCode": "INPUT_TOO_LONG", "message": str(e)}
+        )
 
     try:
         runner, cache_hit = load_runner(
@@ -434,15 +474,21 @@ async def run_request(req: CanonicalRequest):
         else:
             error_code = "MODEL_NOT_FOUND"
 
-        logger.info(json.dumps({
-            "request_id": request_id,
-            "repo_id": req.repo_id,
-            "capability": req.capability,
-            "latency_ms": int((time.time() - start) * 1000),
-            "error": error_msg,
-            "error_code": error_code,
-        }))
-        raise HTTPException(status_code=400, detail={"errorCode": error_code, "message": error_msg})
+        logger.info(
+            json.dumps(
+                {
+                    "request_id": request_id,
+                    "repo_id": req.repo_id,
+                    "capability": req.capability,
+                    "latency_ms": int((time.time() - start) * 1000),
+                    "error": error_msg,
+                    "error_code": error_code,
+                }
+            )
+        )
+        raise HTTPException(
+            status_code=400, detail={"errorCode": error_code, "message": error_msg}
+        )
 
     params = req.params or {}
 
@@ -460,41 +506,60 @@ async def run_request(req: CanonicalRequest):
             error_code = "INFERENCE_ERROR"
             status_code = 500
 
-        logger.info(json.dumps({
-            "request_id": request_id,
-            "repo_id": req.repo_id,
-            "capability": req.capability,
-            "latency_ms": int((time.time() - start) * 1000),
-            "error": error_msg,
-            "error_code": error_code,
-        }))
-        raise HTTPException(status_code=status_code, detail={"errorCode": error_code, "message": error_msg})
+        logger.info(
+            json.dumps(
+                {
+                    "request_id": request_id,
+                    "repo_id": req.repo_id,
+                    "capability": req.capability,
+                    "latency_ms": int((time.time() - start) * 1000),
+                    "error": error_msg,
+                    "error_code": error_code,
+                }
+            )
+        )
+        raise HTTPException(
+            status_code=status_code,
+            detail={"errorCode": error_code, "message": error_msg},
+        )
     except Exception as e:
-        logger.info(json.dumps({
-            "request_id": request_id,
-            "repo_id": req.repo_id,
-            "capability": req.capability,
-            "latency_ms": int((time.time() - start) * 1000),
-            "error": str(e),
-            "error_code": "INFERENCE_ERROR",
-        }))
+        logger.info(
+            json.dumps(
+                {
+                    "request_id": request_id,
+                    "repo_id": req.repo_id,
+                    "capability": req.capability,
+                    "latency_ms": int((time.time() - start) * 1000),
+                    "error": str(e),
+                    "error_code": "INFERENCE_ERROR",
+                }
+            )
+        )
         raise HTTPException(
             status_code=500,
-            detail={"errorCode": "INFERENCE_ERROR", "message": ERRORS["INFERENCE_ERROR"]},
+            detail={
+                "errorCode": "INFERENCE_ERROR",
+                "message": ERRORS["INFERENCE_ERROR"],
+            },
         )
 
     latency_ms = int((time.time() - start) * 1000)
-    logger.info(json.dumps({
-        "request_id": request_id,
-        "repo_id": req.repo_id,
-        "capability": req.capability,
-        "latency_ms": latency_ms,
-        "cache_hit": cache_hit,
-    }))
+    logger.info(
+        json.dumps(
+            {
+                "request_id": request_id,
+                "repo_id": req.repo_id,
+                "capability": req.capability,
+                "latency_ms": latency_ms,
+                "cache_hit": cache_hit,
+            }
+        )
+    )
 
     return {"result": output}
 
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run("huggingface:app", host="0.0.0.0", port=8000)

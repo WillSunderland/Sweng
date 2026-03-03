@@ -1,6 +1,11 @@
 import logging
 from openai import AsyncOpenAI, APITimeoutError, APIConnectionError, RateLimitError
-from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
+from tenacity import (
+    retry,
+    stop_after_attempt,
+    wait_exponential,
+    retry_if_exception_type,
+)
 
 from app.config import getSettings
 from app.services.llm_client import BaseLLMClient, LLMResponse
@@ -16,11 +21,9 @@ class NvidiaLLMClient(BaseLLMClient):
         self.model = settings.nvidia_model
         self.timeout = settings.nvidia_timeout
         self.max_retries = settings.nvidia_max_retries
-        
+
         self.client = AsyncOpenAI(
-            api_key=self.api_key,
-            base_url=self.base_url,
-            timeout=self.timeout
+            api_key=self.api_key, base_url=self.base_url, timeout=self.timeout
         )
 
     @property
@@ -29,7 +32,9 @@ class NvidiaLLMClient(BaseLLMClient):
             reraise=True,
             stop=stop_after_attempt(self.max_retries),
             wait=wait_exponential(multiplier=1, min=1, max=10),
-            retry=retry_if_exception_type((APITimeoutError, APIConnectionError, RateLimitError))
+            retry=retry_if_exception_type(
+                (APITimeoutError, APIConnectionError, RateLimitError)
+            ),
         )
 
     async def generate(
@@ -45,7 +50,7 @@ class NvidiaLLMClient(BaseLLMClient):
                 model=self.model,
                 messages=[
                     {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt}
+                    {"role": "user", "content": user_prompt},
                 ],
                 temperature=temperature,
                 max_tokens=max_tokens,
@@ -53,17 +58,17 @@ class NvidiaLLMClient(BaseLLMClient):
 
         try:
             response = await _call_api()
-            
+
             content = response.choices[0].message.content or ""
             usage = response.usage
-            
+
             return LLMResponse(
                 content=content,
                 model=self.model,
                 provider="nvidia",
                 prompt_tokens=usage.prompt_tokens if usage else 0,
                 completion_tokens=usage.completion_tokens if usage else 0,
-                total_tokens=usage.total_tokens if usage else 0
+                total_tokens=usage.total_tokens if usage else 0,
             )
         except Exception as e:
             logger.error(f"Nvidia API call failed: {e}")
@@ -75,7 +80,7 @@ class NvidiaLLMClient(BaseLLMClient):
             await self.client.chat.completions.create(
                 model=self.model,
                 messages=[{"role": "user", "content": "ping"}],
-                max_tokens=1
+                max_tokens=1,
             )
             return True
         except Exception:

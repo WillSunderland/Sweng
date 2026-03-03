@@ -24,7 +24,7 @@ def buildGraph(client: OpenSearch, index: str):
     graph.add_edge(START, "inputNode")
     graph.add_edge("inputNode", "searchNode")
     graph.add_edge("searchNode", "routerNode")
-    
+
     graph.add_conditional_edges(
         "routerNode",
         lambda state: state.get("route_decision", "nvidia"),
@@ -33,7 +33,7 @@ def buildGraph(client: OpenSearch, index: str):
             "huggingface": "hfLlmNode",
         },
     )
-    
+
     graph.add_edge("nvidiaLlmNode", "llmOutputNode")
     graph.add_edge("hfLlmNode", "llmOutputNode")
     graph.add_edge("llmOutputNode", END)

@@ -24,17 +24,20 @@ from app.graph.nodes_llm import routerNode
 
 load_dotenv()
 
+
 async def main():
     settings = getSettings()
-    print(f"Validation Script Settings Loaded: Nvidia Key [{'SET' if settings.nvidia_api_key else 'MISSING'}]")
-    
+    print(
+        f"Validation Script Settings Loaded: Nvidia Key [{'SET' if settings.nvidia_api_key else 'MISSING'}]"
+    )
+
     results = {
         "Nvidia Connection": "FAIL",
         "Nvidia Generation": "FAIL",
         "HF Connection": "FAIL",
         "HF Generation": "FAIL",
         "RAG Prompt": "FAIL",
-        "Router Logic": "FAIL"
+        "Router Logic": "FAIL",
     }
 
     # 1. Test Nvidia
@@ -44,10 +47,12 @@ async def main():
         if await nvidia.health_check():
             print("Health Check: PASS")
             results["Nvidia Connection"] = "PASS"
-            
+
             try:
                 print("Generating test response...")
-                resp = await nvidia.generate("You are a helpful assistant.", "What is 2+2? Answer in one word.")
+                resp = await nvidia.generate(
+                    "You are a helpful assistant.", "What is 2+2? Answer in one word."
+                )
                 print(f"Response: {resp.content}")
                 print(f"Model: {resp.model}")
                 print(f"Tokens: {resp.total_tokens}")
@@ -66,17 +71,21 @@ async def main():
         if await hf.health_check():
             print("Health Check: PASS")
             results["HF Connection"] = "PASS"
-            
+
             try:
                 print("Generating test response...")
-                resp = await hf.generate("You are a helpful assistant.", "What is 2+2? Answer in one word.")
+                resp = await hf.generate(
+                    "You are a helpful assistant.", "What is 2+2? Answer in one word."
+                )
                 print(f"Response: {resp.content}")
                 print(f"Model: {resp.model}")
                 results["HF Generation"] = "PASS"
             except Exception as e:
                 print(f"Generation Failed: {e}")
         else:
-            print(f"Health Check: FAIL (Server at {settings.hf_server_url} not reachable)")
+            print(
+                f"Health Check: FAIL (Server at {settings.hf_server_url} not reachable)"
+            )
             results["HF Connection"] = "SKIP"
             results["HF Generation"] = "SKIP"
     except Exception as e:
@@ -86,17 +95,23 @@ async def main():
     print("\n--- Testing RAG Prompt ---")
     try:
         query = "test query"
-        docs = [{
-            "title": "Nevada Tax Reform Act",
-            "chunk_text": "Section 5: All individuals earning above $80,000...",
-            "state": "Nevada",
-            "bill_type": "HB",
-            "bill_number": "123",
-            "session": "2024",
-            "policy_area": "Taxation"
-        }]
+        docs = [
+            {
+                "title": "Nevada Tax Reform Act",
+                "chunk_text": "Section 5: All individuals earning above $80,000...",
+                "state": "Nevada",
+                "bill_type": "HB",
+                "bill_number": "123",
+                "session": "2024",
+                "policy_area": "Taxation",
+            }
+        ]
         prompt = build_rag_user_prompt(query, docs)
-        if "Nevada Tax Reform Act" in prompt and "Section 5" in prompt and query in prompt:
+        if (
+            "Nevada Tax Reform Act" in prompt
+            and "Section 5" in prompt
+            and query in prompt
+        ):
             print("Prompt Built Successfully")
             results["RAG Prompt"] = "PASS"
         else:
@@ -109,25 +124,30 @@ async def main():
     try:
         # Simple
         state_simple = {
-            "processedQuery": "simple", 
-            "searchResults": [{"_id": "1"}], # 1 result
-            "error": None
+            "processedQuery": "simple",
+            "searchResults": [{"_id": "1"}],  # 1 result
+            "error": None,
         }
         dec_simple = routerNode(state_simple)
-        
+
         # Complex
         state_complex = {
-            "processedQuery": "compare A and B", 
+            "processedQuery": "compare A and B",
             "searchResults": [{"_id": "1"}],
-            "error": None
+            "error": None,
         }
         dec_complex = routerNode(state_complex)
-        
-        if dec_simple["route_decision"] == "huggingface" and dec_complex["route_decision"] == "nvidia":
+
+        if (
+            dec_simple["route_decision"] == "huggingface"
+            and dec_complex["route_decision"] == "nvidia"
+        ):
             print("Router Logic: PASS")
             results["Router Logic"] = "PASS"
         else:
-            print(f"Router Logic Check Failed: Simple->{dec_simple['route_decision']}, Complex->{dec_complex['route_decision']}")
+            print(
+                f"Router Logic Check Failed: Simple->{dec_simple['route_decision']}, Complex->{dec_complex['route_decision']}"
+            )
     except Exception as e:
         print(f"Router Error: {e}")
 
@@ -138,6 +158,7 @@ async def main():
     for k, v in results.items():
         print(f"{k:<25}: {v}")
     print("============================================")
+
 
 if __name__ == "__main__":
     asyncio.run(main())

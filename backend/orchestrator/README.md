@@ -43,7 +43,8 @@ Key Endpoints
 2) GET  /api/runs
 3) GET  /api/runs/{run_id}
 4) GET  /api/sources/{source_id}
-5) GET  /health
+5) GET  /api/stats
+6) GET  /health
 
 ## 'urls.py'
 Describes the URL patterns
@@ -69,4 +70,60 @@ Defines the user-facing API endpoints for managing and retrieving legal analysis
 layer.
 
 It uses Django Rest Framework to expose stubbed Endpoints.
+
+## 'mmr.py'
+Implements Maximum Marginal Relevance (MMR) re-ranking for document retrieval.
+
+When searching for relevant legislation, multiple chunks from the same bill often dominate the results. 
+MMR re-ranks the initial 50 chunks retrieved from Elasticsearch by balancing relevance to the query 
+with diversity across different bills. Chunks from the same bill receive an extra similarity penalty 
+to prevent them from dominating results. Returns the top 5 most relevant and diverse chunks.
+
+Key function:
+1) mmr_rerank(chunks, query_embedding, top_k, lambda_param, same_doc_penalty) -> re-ranked list of chunks
+
+## 'semantic_retrieval.py'
+Handles semantic search against the Elasticsearch index. Embeds user queries using sentence-transformers 
+(all-MiniLM-L6-v2), performs kNN vector search, and formats results. Integrates MMR re-ranking to ensure 
+diverse document retrieval.
+
+Key methods:
+1) embed_query(user_question) -> converts query to embedding vector
+2) vector_search(query_vector, fetch_k, state) -> kNN search against Elasticsearch
+3) search(query, top_k, state) -> end-to-end search with MMR re-ranking
+4) get_index_stats() -> returns metadata about indexed documents
+
+## Ingestion Stats Endpoint
+
+### GET /api/stats
+Returns metadata about what's currently indexed in Elasticsearch. Useful for understanding what 
+context the LLM has access to and debugging weak answers.
+
+Response fields:
+- `total_chunks` — Total number of text chunks in the index
+- `unique_bills` — Number of distinct bills indexed
+- `bill_types` — Breakdown of chunks by bill type (HR, S, HJRES, etc.)
+- `policy_areas` — Breakdown of chunks by policy area (Health, Taxation, etc.)
+- `sessions` — Breakdown of chunks by congress session
+
+Example response:
+```json
+{
+    "total_chunks": 342,
+    "unique_bills": 47,
+    "bill_types": [
+        {"type": "HR", "count": 210},
+        {"type": "S", "count": 95},
+        {"type": "HJRES", "count": 37}
+    ],
+    "policy_areas": [
+        {"area": "Health", "count": 85},
+        {"area": "Taxation", "count": 62},
+        {"area": "Education", "count": 45}
+    ],
+    "sessions": [
+        {"session": "118", "count": 342}
+    ]
+}
+```
 
