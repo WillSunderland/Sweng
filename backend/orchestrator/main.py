@@ -84,7 +84,11 @@ async def get_run(run_id: str):
         raise HTTPException(status_code=404, detail=f"Run {run_id} not found")
 
     result = run.get("result", {})
-    source_ids = [source_id for source_id in SOURCE_STORE if source_id.startswith(f"{run_id}_src_")]
+    source_ids = [
+        source_id
+        for source_id in SOURCE_STORE
+        if source_id.startswith(f"{run_id}_src_")
+    ]
     answer = result.get("answer", "No answer generated.")
     reasoning_steps = result.get("reasoning_steps", [])
     carbon_tons = float(result.get("carbonCountInTons", 0.0))
