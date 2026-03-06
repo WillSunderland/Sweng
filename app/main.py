@@ -9,7 +9,6 @@ from opensearchpy import OpenSearch
 from app.config import getSettings
 from app.graph.builder import buildGraph
 from app.models import HealthResponse, QueryRequest, QueryResponse, SourceInfo
-from app.services.llm_client import nvidia_client, hf_client
 from app.services.opensearch_client import createOpensearchClient
 
 logger = logging.getLogger(__name__)
@@ -95,8 +94,15 @@ async def query_endpoint(request: QueryRequest):
 
     initialState = {
         "query": request.query,
+        "chat_history": [message.model_dump() for message in request.chat_history],
+        "max_reasoning_steps": request.max_reasoning_steps or settings.max_reasoning_steps,
         "processedQuery": "",
         "searchResults": [],
+        "accumulatedSources": [],
+        "searchQueries": [],
+        "readNotes": [],
+        "plan": [],
+        "reasoning_steps": [],
         "response": {},
         "error": None,
     }
@@ -113,8 +119,13 @@ async def query_endpoint(request: QueryRequest):
             sources=[SourceInfo(**s) for s in response_data.get("sources", [])],
             model_used=response_data.get("model_used"),
             provider=response_data.get("provider"),
+            carbonCountInTons=response_data.get("carbonCountInTons", 0.0),
             token_count=response_data.get("token_count", 0),
-            error=response_data.get("error")
+            error=response_data.get("error"),
+            rewritten_query=response_data.get("rewritten_query"),
+            plan=response_data.get("plan", []),
+            reasoning_steps=response_data.get("reasoning_steps", []),
+            retrieval_skipped=response_data.get("retrieval_skipped", False),
         )
 
     except Exception as exc:

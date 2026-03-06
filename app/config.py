@@ -1,3 +1,4 @@
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 DEFAULT_SERVER_PORT = 8000
@@ -34,6 +35,19 @@ class Settings(BaseSettings):
 
     # Routing
     simple_query_threshold: int = 2
+    search_top_k: int = 5
+    max_reasoning_steps: int = 2
+
+    @field_validator("debug", mode="before")
+    @classmethod
+    def parse_debug_flag(cls, value):
+        if isinstance(value, str):
+            lowered = value.strip().lower()
+            if lowered in {"release", "prod", "production", "false", "0", "no", "off"}:
+                return False
+            if lowered in {"debug", "dev", "development", "true", "1", "yes", "on"}:
+                return True
+        return value
 
     model_config = SettingsConfigDict(
         env_file=".env",

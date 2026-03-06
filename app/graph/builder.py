@@ -4,7 +4,17 @@ from langgraph.graph import END, START, StateGraph
 from opensearchpy import OpenSearch
 
 from app.graph.nodes import inputNode, makeSearchNode
-from app.graph.nodes_llm import routerNode, nvidiaLlmNode, hfLlmNode
+from app.graph.nodes_llm import (
+    hfLlmNode,
+    nvidiaLlmNode,
+    planNode,
+    prefetchDecisionNode,
+    prefetchRoute,
+    queryRewriteNode,
+    readLoopRoute,
+    readNode,
+    routerNode,
+)
 from app.graph.output_formatter import llmOutputNode
 from app.graph.state import GraphState
 
@@ -15,15 +25,37 @@ def buildGraph(client: OpenSearch, index: str):
     graph = StateGraph(GraphState)
 
     graph.add_node("inputNode", inputNode)
+    graph.add_node("queryRewriteNode", queryRewriteNode)
+    graph.add_node("planNode", planNode)
+    graph.add_node("prefetchDecisionNode", prefetchDecisionNode)
     graph.add_node("searchNode", searchNode)
+    graph.add_node("readNode", readNode)
     graph.add_node("routerNode", routerNode)
     graph.add_node("nvidiaLlmNode", nvidiaLlmNode)
     graph.add_node("hfLlmNode", hfLlmNode)
     graph.add_node("llmOutputNode", llmOutputNode)
 
     graph.add_edge(START, "inputNode")
-    graph.add_edge("inputNode", "searchNode")
-    graph.add_edge("searchNode", "routerNode")
+    graph.add_edge("inputNode", "queryRewriteNode")
+    graph.add_edge("queryRewriteNode", "planNode")
+    graph.add_edge("planNode", "prefetchDecisionNode")
+    graph.add_conditional_edges(
+        "prefetchDecisionNode",
+        prefetchRoute,
+        {
+            "search": "searchNode",
+            "context_only": "routerNode",
+        },
+    )
+    graph.add_edge("searchNode", "readNode")
+    graph.add_conditional_edges(
+        "readNode",
+        readLoopRoute,
+        {
+            "search_again": "searchNode",
+            "answer": "routerNode",
+        },
+    )
     
     graph.add_conditional_edges(
         "routerNode",
