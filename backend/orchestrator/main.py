@@ -8,6 +8,7 @@ from graph import app as graph_app
 from semantic_retrieval import SemanticRetriever
 from url_utils import resolve_source_url
 from cache import QueryCache
+import re
 
 app = FastAPI(title="Orchestrator API")
 
