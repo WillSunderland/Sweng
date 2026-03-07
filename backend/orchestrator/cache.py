@@ -5,7 +5,7 @@ from typing import Optional, Dict, Any
 class QueryCache:
     """
     Simple in-memory cache for query results.
-    
+
     Stores answers + documents for previously seen queries
     so we don't re-embed, re-search, and re-call the LLM.
     """
