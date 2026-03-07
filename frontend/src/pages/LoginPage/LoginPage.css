@@ -3,13 +3,13 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #f5f5f5;
+  background: var(--bg);
 }
 
 .login-placeholder {
   text-align: center;
   padding: 60px;
-  background: white;
+  background: var(--card-bg);
   border-radius: 12px;
   box-shadow: 0 4px 12px rgba(0,0,0,0.1);
   max-width: 400px;
@@ -18,12 +18,12 @@
 .login-placeholder h1 {
   font-size: 32px;
   margin-bottom: 15px;
-  color: #333;
+  color: var(--text);
 }
 
 .login-placeholder p {
   font-size: 16px;
-  color: #666;
+  color: var(--text-body);
   margin-bottom: 30px;
 }
 

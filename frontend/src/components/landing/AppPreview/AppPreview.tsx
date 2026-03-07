@@ -9,9 +9,7 @@ interface AppPreviewProps {
 export const AppPreview: React.FC<AppPreviewProps> = ({ isFlat }) => {
   return (
     <div
-      className={`transition-transform duration-800 origin-top ${
-        isFlat ? 'scale-100' : 'scale-95'
-      }`}
+      className={`transition-transform duration-800 origin-top ${isFlat ? 'scale-100' : 'scale-95'}`}
       style={{
         transform: isFlat ? 'rotateX(0deg) scale(1)' : 'rotateX(12deg) scale(0.95)',
         transformStyle: 'preserve-3d',

@@ -5,9 +5,12 @@ import type { StatItem, CounterConfig } from '../../../types/landingTypes';
 
 export const StatsBar: React.FC = () => {
   const { ref, isVisible } = useIntersectionReveal();
-
   return (
-    <div ref={ref as React.RefObject<HTMLDivElement>} className="bg-white border-t border-slate-200 py-10 px-10 relative z-10">
+    <div
+      ref={ref as React.RefObject<HTMLDivElement>}
+      className="py-10 px-10 relative z-10 border-t"
+      style={{ background: 'var(--card-bg)', borderColor: 'var(--border-light)' }}
+    >
       <div className="max-w-[1200px] mx-auto grid grid-cols-4 gap-10">
         {STATS.map((stat, index) => (
           <StatDisplay key={stat.label} stat={stat} index={index} isVisible={isVisible} />
@@ -40,12 +43,12 @@ const StatDisplay: React.FC<StatDisplayProps> = ({ stat, index, isVisible }) => 
         isRevealed ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-5'
       }`}
     >
-      <div className="text-[11px] text-slate-400 uppercase tracking-widest mb-2">
+      <div className="text-[11px] uppercase tracking-widest mb-2" style={{ color: 'var(--text-muted)' }}>
         {stat.label}
       </div>
       <div
-        className="text-2xl font-bold text-slate-900"
-        style={{ fontFamily: "'Space Grotesk', sans-serif" }}
+        className="text-2xl font-bold"
+        style={{ fontFamily: "'Space Grotesk', sans-serif", color: 'var(--text)' }}
       >
         {stat.counter ? (
           <CounterValue config={stat.counter} suffix={stat.counter.suffix} shouldStart={isRevealed} />
@@ -65,7 +68,6 @@ interface CounterValueProps {
 
 const CounterValue: React.FC<CounterValueProps> = ({ config, suffix, shouldStart }) => {
   const value = useCounterAnimation(config.target, config.decimals, COUNTER_DURATION_MS, shouldStart);
-
   return (
     <span className="inline-block min-w-[80px]">
       {config.decimals > 0 ? value.toFixed(config.decimals) : Math.round(value)}
