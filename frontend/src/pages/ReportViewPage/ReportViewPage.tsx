@@ -3,7 +3,12 @@ import AppSidebar from '../../components/AppSidebar/AppSidebar';
 import '../../components/AppSidebar/SharedSidebar.css';
 import './ReportViewPage.css';
 
-const ReportViewPage = () => {
+interface ReportViewPageProps {
+  darkMode?: boolean;
+  toggleDarkMode?: () => void;
+}
+
+const ReportViewPage: React.FC<ReportViewPageProps> = ({ darkMode, toggleDarkMode }) => {
   const navigate = useNavigate();
   const { id } = useParams();
 
@@ -17,7 +22,7 @@ const ReportViewPage = () => {
 
   return (
     <div className="report-page">
-      <AppSidebar activeItem="workspace" />
+      <AppSidebar activeItem="workspace" darkMode={darkMode} toggleDarkMode={toggleDarkMode} />
 
       <main className="report-content">
         <header className="report-header">

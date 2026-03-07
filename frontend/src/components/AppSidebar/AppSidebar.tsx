@@ -1,14 +1,17 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import propylonLogo from '../../assets/propylon_logo.svg';
-
+import sunIcon from "../../assets/lighModeSun.png";
+import moonIcon from "../../assets/darkModeMoon.png";
 export type SidebarActiveItem = 'workspace' | 'archive' | 'assistant';
 
 interface AppSidebarProps {
   activeItem: SidebarActiveItem;
+  darkMode: boolean;
+  toggleDarkMode: () => void;
 }
 
-const AppSidebar: React.FC<AppSidebarProps> = ({ activeItem }) => {
+const AppSidebar: React.FC<AppSidebarProps> = ({ activeItem, darkMode, toggleDarkMode }) => {
   const navigate = useNavigate();
 
   return (
@@ -104,6 +107,33 @@ const AppSidebar: React.FC<AppSidebarProps> = ({ activeItem }) => {
           </svg>
           New Research Case
         </button>
+
+        {/* Dark mode toggle */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 4px' }}>
+          <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+            {darkMode ? 'Dark Mode' : 'Light Mode'}
+          </span>
+          <button
+            onClick={toggleDarkMode}
+            style={{
+              width: '44px', height: '24px', borderRadius: '999px',
+              border: 'none', cursor: 'pointer', padding: 0,
+              background: darkMode ? '#3b82f6' : '#e2e8f0',
+              transition: 'background 0.3s ease',
+              display: 'flex', alignItems: 'center',
+            }}
+          >
+            <span className="toggle-thumb" style={{
+              width: '18px', height: '18px', borderRadius: '50%',
+              background: 'white', display: 'flex', alignItems: 'center',
+              justifyContent: 'center',
+              transform: darkMode ? 'translateX(22px)' : 'translateX(3px)',
+              boxShadow: '0 1px 4px rgba(0,0,0,0.2)',
+            }}>
+              {darkMode ? <img src={moonIcon} width="24" /> : <img src={sunIcon} width="24" />}
+            </span>
+          </button>
+        </div>
 
         <div className="sidebar-user">
           <div className="sidebar-user-avatar">

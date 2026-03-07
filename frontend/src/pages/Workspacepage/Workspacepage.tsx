@@ -23,13 +23,17 @@ interface Case {
 
 type FilterType = 'all-cases' | 'drafts' | 'completed' | 'high-priority';
 
-const WorkspacePage: React.FC = () => {
+interface WorkspacePageProps {
+  darkMode: boolean;
+  toggleDarkMode: () => void;
+}
+
+const WorkspacePage: React.FC<WorkspacePageProps> = ({ darkMode, toggleDarkMode }) => {
   const navigate = useNavigate();
   const [activeFilter, setActiveFilter] = useState<FilterType>('all-cases');
   const [showFilterDropdown, setShowFilterDropdown] = useState<boolean>(false);
   const [showSortDropdown, setShowSortDropdown] = useState<boolean>(false);
 
-  // Hardcoded cases matching the reference image
   const cases: Case[] = [
     {
       id: 1,
@@ -98,7 +102,7 @@ const WorkspacePage: React.FC = () => {
 
   return (
     <div className="workspace-page">
-      <AppSidebar activeItem="workspace" />
+      <AppSidebar activeItem="workspace" darkMode={darkMode} toggleDarkMode={toggleDarkMode} />
 
       <main className="main-workspace">
         <header className="workspace-header">
@@ -106,11 +110,7 @@ const WorkspacePage: React.FC = () => {
             <svg className="search-icon" width="20" height="20" viewBox="0 0 20 20" fill="none">
               <path d="M9 17A8 8 0 1 0 9 1a8 8 0 0 0 0 16zM18 18l-4.35-4.35" stroke="#9CA3AF" strokeWidth="2" strokeLinecap="round"/>
             </svg>
-            <input
-              type="text"
-              placeholder="Search briefs, case law or archive research..."
-              className="search-input"
-            />
+            <input type="text" placeholder="Search briefs, case law or archive research..." className="search-input" />
           </div>
           <div className="header-actions">
             <button className="icon-btn notification-btn">
@@ -129,13 +129,7 @@ const WorkspacePage: React.FC = () => {
           <div className="page-actions">
             <div className="filter-sort-container">
               <div className="dropdown">
-                <button
-                  className="btn-secondary"
-                  onClick={() => {
-                    setShowFilterDropdown(!showFilterDropdown);
-                    setShowSortDropdown(false);
-                  }}
-                >
+                <button className="btn-secondary" onClick={() => { setShowFilterDropdown(!showFilterDropdown); setShowSortDropdown(false); }}>
                   <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
                     <path d="M2 4h12M4 8h8M6 12h4" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
                   </svg>
@@ -150,15 +144,8 @@ const WorkspacePage: React.FC = () => {
                   </div>
                 )}
               </div>
-
               <div className="dropdown">
-                <button
-                  className="btn-secondary"
-                  onClick={() => {
-                    setShowSortDropdown(!showSortDropdown);
-                    setShowFilterDropdown(false);
-                  }}
-                >
+                <button className="btn-secondary" onClick={() => { setShowSortDropdown(!showSortDropdown); setShowFilterDropdown(false); }}>
                   Sort
                   <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
                     <path d="M4 6l4 4 4-4" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
@@ -173,58 +160,27 @@ const WorkspacePage: React.FC = () => {
                 )}
               </div>
             </div>
-
-            <button className="btn-primary">
-              + New Research Case
-            </button>
+            <button className="btn-primary">+ New Research Case</button>
           </div>
         </div>
 
         <div className="filter-tabs">
-          <button
-            className={`filter-tab ${activeFilter === 'all-cases' ? 'active' : ''}`}
-            onClick={() => setActiveFilter('all-cases')}
-          >
-            All Cases
-          </button>
-          <button
-            className={`filter-tab ${activeFilter === 'drafts' ? 'active' : ''}`}
-            onClick={() => setActiveFilter('drafts')}
-          >
-            Drafts (1)
-          </button>
-          <button
-            className={`filter-tab ${activeFilter === 'completed' ? 'active' : ''}`}
-            onClick={() => setActiveFilter('completed')}
-          >
-            Completed (1)
-          </button>
-          <button
-            className={`filter-tab ${activeFilter === 'high-priority' ? 'active' : ''}`}
-            onClick={() => setActiveFilter('high-priority')}
-          >
-            High Priority
-          </button>
+          <button className={`filter-tab ${activeFilter === 'all-cases' ? 'active' : ''}`} onClick={() => setActiveFilter('all-cases')}>All Cases</button>
+          <button className={`filter-tab ${activeFilter === 'drafts' ? 'active' : ''}`} onClick={() => setActiveFilter('drafts')}>Drafts (1)</button>
+          <button className={`filter-tab ${activeFilter === 'completed' ? 'active' : ''}`} onClick={() => setActiveFilter('completed')}>Completed (1)</button>
+          <button className={`filter-tab ${activeFilter === 'high-priority' ? 'active' : ''}`} onClick={() => setActiveFilter('high-priority')}>High Priority</button>
         </div>
 
         <div className="cases-container">
           <div className="cases-grid">
             {getFilteredCases().map((caseItem) => (
-              <div
-                key={caseItem.id}
-                className="case-card"
-                onClick={() => handleCaseClick(caseItem)}
-              >
+              <div key={caseItem.id} className="case-card" onClick={() => handleCaseClick(caseItem)}>
                 <div className="case-header">
-                  <span className={`case-status status-${caseItem.status}`}>
-                    {caseItem.statusLabel}
-                  </span>
+                  <span className={`case-status status-${caseItem.status}`}>{caseItem.statusLabel}</span>
                   <span className="case-number">{caseItem.caseNumber}</span>
                 </div>
-
                 <h3 className="case-title">{caseItem.title}</h3>
                 <p className="case-description">{caseItem.description}</p>
-
                 <div className="case-footer">
                   <div className="case-meta">
                     <div className="meta-row">
@@ -242,18 +198,12 @@ const WorkspacePage: React.FC = () => {
                       <span>{caseItem.assignee}</span>
                     </div>
                   </div>
-                  <button className="case-action-btn">
-                    {caseItem.actionLabel}
-                  </button>
+                  <button className="case-action-btn">{caseItem.actionLabel}</button>
                 </div>
-
                 {caseItem.progress !== undefined && (
                   <div className="progress-container">
                     <div className="progress-bar">
-                      <div
-                        className="progress-fill"
-                        style={{ width: `${caseItem.progress}%` }}
-                      ></div>
+                      <div className="progress-fill" style={{ width: `${caseItem.progress}%` }}></div>
                     </div>
                   </div>
                 )}
@@ -309,9 +259,7 @@ const WorkspacePage: React.FC = () => {
         </div>
 
         <div className="sidebar-widget">
-          <div className="widget-header">
-            <h3>SYSTEM ACTIVITY</h3>
-          </div>
+          <div className="widget-header"><h3>SYSTEM ACTIVITY</h3></div>
           <div className="widget-content">
             <div className="activity-item">
               <div className="activity-icon">⚡</div>

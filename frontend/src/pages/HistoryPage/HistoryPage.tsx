@@ -16,8 +16,11 @@ interface ArchiveCase {
   type: string;
   team: string;
 }
-
-const HistoryPage = () => {
+interface HistoryPageProps {
+  darkMode: boolean;
+  toggleDarkMode: () => void;
+}
+const HistoryPage = ({ darkMode, toggleDarkMode }: HistoryPageProps) => {
   const navigate = useNavigate();
   const [sortKey, setSortKey] = useState<SortKey>('date');
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
@@ -76,7 +79,11 @@ const HistoryPage = () => {
 
   return (
     <div className="history-page">
-      <AppSidebar activeItem="archive" />
+      <AppSidebar
+  activeItem="archive"
+  darkMode={darkMode}
+  toggleDarkMode={toggleDarkMode}
+/>
 
       <main className="history-main">
         <header className="history-header">

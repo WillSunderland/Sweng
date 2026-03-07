@@ -2,6 +2,8 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useNavigate, NavLink } from 'react-router-dom';
 import propylonLogo from '../../assets/propylon_logo.svg';
 import './AIagentPage.css';
+import sunIcon from '../../assets/lighModeSun.png';
+import moonIcon from '../../assets/darkModeMoon.png';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -622,7 +624,7 @@ const ReasoningPanel: React.FC<{ routedTo?: string; isTyping?: boolean }> = ({ r
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
-const AIagentPage: React.FC = () => {
+const AIagentPage: React.FC<{ darkMode?: boolean; toggleDarkMode?: () => void }> = ({ darkMode, toggleDarkMode }) => {
   const navigate = useNavigate();
 
   const [messages, setMessages] = useState<Message[]>([
@@ -775,6 +777,29 @@ const AIagentPage: React.FC = () => {
             </svg>
             New Research Case
           </button>
+          {toggleDarkMode && (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 4px' }}>
+      
+      <button
+        onClick={toggleDarkMode}
+        style={{
+          width: '44px', height: '24px', borderRadius: '999px',
+          border: 'none', cursor: 'pointer', padding: 0,
+          background: darkMode ? '#3b82f6' : '#e2e8f0',
+          transition: 'background 0.3s ease',
+          display: 'flex', alignItems: 'center',
+        }}
+      >
+        <span style={{
+          width: '18px', height: '18px', borderRadius: '50%',
+          background: 'white', display: 'flex', alignItems: 'center',
+          justifyContent: 'center',
+          transform: darkMode ? 'translateX(22px)' : 'translateX(3px)',
+          boxShadow: '0 1px 4px rgba(0,0,0,0.2)',
+        }} />
+      </button>
+    </div>
+  )}
           <div className="sidebar-user">
             <div className="sidebar-user-avatar">
               <img src="https://ui-avatars.com/api/?name=James+Sterling&background=e2e8f0&color=475569&size=36&font-size=0.4&bold=true" alt="JS" />
