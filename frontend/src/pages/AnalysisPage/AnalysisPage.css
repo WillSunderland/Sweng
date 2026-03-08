@@ -1,27 +1,15 @@
-:root {
-  --analysis-primary: #2563eb;
-  --analysis-primary-dark: #1d4ed8;
-  --analysis-light-blue: #eff6ff;
-  --analysis-border: #e5e7eb;
-  --analysis-text: #111827;
-  --analysis-text-soft: #6b7280;
-  --analysis-text-muted: #9ca3af;
-  --analysis-bg: #f9fafb;
-  --analysis-white: #ffffff;
-}
-
 .analysis-page {
   display: grid;
   grid-template-columns: 220px 1fr 300px;
   height: 100vh;
-  background: var(--analysis-bg);
+  background: var(--bg-light);
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   overflow: hidden;
 }
 
 .analysis-sidebar {
-  background: var(--analysis-white);
-  border-right: 1px solid var(--analysis-border);
+  background: var(--card-bg);
+  border-right: 1px solid var(--border-light);
   padding: 20px 12px;
 }
 
@@ -30,7 +18,7 @@
   align-items: center;
   gap: 10px;
   padding: 0 10px 16px;
-  border-bottom: 1px solid var(--analysis-border);
+  border-bottom: 1px solid var(--border-light);
   margin-bottom: 12px;
   cursor: pointer;
 }
@@ -47,14 +35,14 @@
   gap: 6px;
   font-size: 16px;
   letter-spacing: -0.2px;
-  color: var(--analysis-text);
+  color: var(--text);
 }
 
 .analysis-brand-subtitle {
   display: block;
   margin-top: 2px;
   font-size: 11px;
-  color: var(--analysis-text-soft);
+  color: var(--text-body);
 }
 
 .brand-rws {
@@ -84,19 +72,19 @@
   border-radius: 8px;
   font-size: 13px;
   font-weight: 500;
-  color: var(--analysis-text-soft);
+  color: var(--text-body);
   cursor: pointer;
   transition: all 0.2s;
 }
 
 .analysis-nav-item:hover {
-  background: #f3f4f6;
-  color: var(--analysis-text);
+  background: var(--bg-secondary);
+  color: var(--text);
 }
 
 .analysis-nav-item.active {
-  background: var(--analysis-primary);
-  color: var(--analysis-white);
+  background: var(--accent-blue);
+  color: white;
 }
 
 .analysis-content {
@@ -108,14 +96,14 @@
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 1px;
-  color: var(--analysis-primary);
+  color: var(--accent-blue);
   margin-bottom: 8px;
 }
 
 .analysis-content h1 {
   font-size: 34px;
   line-height: 1.15;
-  color: var(--analysis-text);
+  color: var(--text);
   margin-bottom: 22px;
 }
 
@@ -126,29 +114,27 @@
 .analysis-content h2 {
   margin-bottom: 12px;
   font-size: 18px;
-  color: var(--analysis-text);
+  color: var(--text);
 }
 
 .key-finding,
 .info-box,
 .precedent-card,
 .sidebar-box {
-  background: var(--analysis-white);
-  border: 1px solid var(--analysis-border);
+  background: var(--card-bg);
+  border: 1px solid var(--border-light);
   border-radius: 14px;
   padding: 18px;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
 }
 
 .key-finding {
-  border-color: #bfdbfe;
-  background: linear-gradient(180deg, #f8fbff 0%, #ffffff 100%);
   margin-bottom: 20px;
 }
 
 .key-finding h3 {
   font-size: 12px;
-  color: var(--analysis-primary);
+  color: var(--accent-blue);
   margin-bottom: 8px;
   letter-spacing: 0.7px;
 }
@@ -159,7 +145,7 @@
 .sidebar-box p {
   font-size: 14px;
   line-height: 1.55;
-  color: var(--analysis-text-soft);
+  color: var(--text-body);
 }
 
 .badge {
@@ -170,8 +156,8 @@
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.4px;
-  background: var(--analysis-light-blue);
-  color: var(--analysis-primary);
+  background: var(--bg-light);
+  color: var(--accent-blue);
   margin-bottom: 10px;
 }
 
@@ -182,12 +168,12 @@
   margin-bottom: 10px;
   font-size: 12px;
   font-weight: 700;
-  color: var(--analysis-text-muted);
+  color: var(--text-muted);
 }
 
 .precedent-card h4 {
   margin-bottom: 8px;
-  color: var(--analysis-text);
+  color: var(--text);
   font-size: 18px;
 }
 
@@ -195,8 +181,8 @@
   margin-top: 8px;
   border: none;
   border-radius: 10px;
-  background: var(--analysis-primary);
-  color: var(--analysis-white);
+  background: var(--accent-blue);
+  color: white;
   padding: 11px 16px;
   font-size: 13px;
   font-weight: 600;
@@ -205,12 +191,12 @@
 }
 
 .analysis-primary-btn:hover {
-  background: var(--analysis-primary-dark);
+  background: var(--accent-blue-light);
 }
 
 .analysis-right-sidebar {
-  border-left: 1px solid var(--analysis-border);
-  background: var(--analysis-white);
+  border-left: 1px solid var(--border-light);
+  background: var(--card-bg);
   padding: 20px;
   overflow-y: auto;
 }
@@ -221,14 +207,19 @@
 
 .sidebar-box h4 {
   font-size: 11px;
-  color: var(--analysis-text-muted);
+  color: var(--text-muted);
   margin-bottom: 10px;
   text-transform: uppercase;
   letter-spacing: 0.7px;
 }
 
 .confidence {
-  font-size: 30px;
+  display: inline-block;
+  font-size: 13px;
   font-weight: 700;
-  color: #10b981;
+  color: var(--accent-green);
+  background: color-mix(in srgb, var(--accent-green) 12%, var(--card-bg));
+  border: 1px solid color-mix(in srgb, var(--accent-green) 30%, transparent);
+  padding: 6px 14px;
+  border-radius: 999px;
 }

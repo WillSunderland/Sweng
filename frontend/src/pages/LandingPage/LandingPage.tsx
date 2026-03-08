@@ -30,8 +30,7 @@ const LandingPage: React.FC = () => {
   }, []);
 
   return (
-    <div className="landing-page min-h-screen bg-gray-50 font-sans text-gray-900 overflow-x-hidden">
-      <Navigation
+    <div className="min-h-screen font-sans overflow-x-hidden" style={{ background: 'var(--bg)', color: 'var(--text)' }}>      <Navigation
         isRevealed={isNavRevealed}
         onLoginClick={() => setAuthModal('login')}
         onGetStartedClick={() => setAuthModal('register')}

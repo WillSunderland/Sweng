@@ -16,25 +16,24 @@ export const HeroSection: React.FC<HeroSectionProps> = ({
   onRequestDemo,
 }) => {
   return (
-    <section className="min-h-screen bg-slate-50 pt-[100px] pb-[40px] px-10 relative overflow-hidden">
+    <section className="min-h-screen pt-[100px] pb-[40px] px-10 relative overflow-hidden" style={{ background: 'var(--bg)' }}>
       <GradientBackground />
 
       <div className="max-w-[1400px] mx-auto flex flex-col items-center relative z-10">
         <div
           className={`text-center max-w-[900px] mb-10 transition-all duration-800 ${
-            isContentRevealed
-              ? 'opacity-100 translate-y-0'
-              : 'opacity-0 translate-y-[60px]'
+            isContentRevealed ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-[60px]'
           }`}
         >
-          <div className="inline-flex items-center gap-2 bg-white/90 backdrop-blur-lg border border-slate-200/80 px-4 py-2 rounded-full text-[13px] font-semibold text-slate-600 mb-6 shadow-sm">
+          <div className="inline-flex items-center gap-2 backdrop-blur-lg border px-4 py-2 rounded-full text-[13px] font-semibold mb-6 shadow-sm"
+            style={{ background: 'var(--card-bg)', borderColor: 'var(--border-light)', color: 'var(--text-body)' }}>
             <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
             NEXT-GEN LEGAL INTELLIGENCE
           </div>
 
           <h1
-            className="text-[62px] font-bold leading-[1.1] tracking-[-2px] text-slate-900 mb-5"
-            style={{ fontFamily: "'Space Grotesk', sans-serif" }}
+            className="text-[62px] font-bold leading-[1.1] tracking-[-2px] mb-5"
+            style={{ fontFamily: "'Space Grotesk', sans-serif", color: 'var(--text)' }}
           >
             Transparency, Auditability, and
             <br />
@@ -43,7 +42,7 @@ export const HeroSection: React.FC<HeroSectionProps> = ({
             </span>
           </h1>
 
-          <p className="text-lg leading-[1.7] text-slate-600 mb-8 max-w-[620px] mx-auto">
+          <p className="text-lg leading-[1.7] mb-8 max-w-[620px] mx-auto" style={{ color: 'var(--text-body)' }}>
             Empowering legal professionals with verifiable intelligence and eco-conscious compute power. Bridge the gap between AI speed and courtroom-grade accuracy.
           </p>
 
@@ -56,7 +55,8 @@ export const HeroSection: React.FC<HeroSectionProps> = ({
             </button>
             <a
               href="#features"
-              className="inline-flex items-center gap-2 px-6 py-3 rounded-lg bg-white text-slate-900 font-semibold text-[15px] border border-slate-200 hover:border-slate-400 hover:bg-slate-50 transition-all no-underline"
+              className="inline-flex items-center gap-2 px-6 py-3 rounded-lg font-semibold text-[15px] transition-all no-underline border"
+              style={{ background: 'var(--card-bg)', color: 'var(--text)', borderColor: 'var(--border-light)' }}
             >
               Platform Overview
             </a>
@@ -64,27 +64,19 @@ export const HeroSection: React.FC<HeroSectionProps> = ({
 
           <div className="flex items-center justify-center gap-3">
             <div className="flex">
-              <div className="w-9 h-9 rounded-full border-[2px] border-white flex items-center justify-center text-[12px] font-semibold text-white bg-gradient-to-br from-indigo-400 to-purple-700">
-                JD
-              </div>
-              <div className="w-9 h-9 rounded-full border-[2px] border-white flex items-center justify-center text-[12px] font-semibold text-white bg-gradient-to-br from-fuchsia-300 to-rose-500 -ml-2.5">
-                SK
-              </div>
-              <div className="w-9 h-9 rounded-full border-[2px] border-white flex items-center justify-center text-[12px] font-semibold text-white bg-gradient-to-br from-sky-400 to-cyan-300 -ml-2.5">
-                ML
-              </div>
+              <div className="w-9 h-9 rounded-full border-[2px] border-white flex items-center justify-center text-[12px] font-semibold text-white bg-gradient-to-br from-indigo-400 to-purple-700">JD</div>
+              <div className="w-9 h-9 rounded-full border-[2px] border-white flex items-center justify-center text-[12px] font-semibold text-white bg-gradient-to-br from-fuchsia-300 to-rose-500 -ml-2.5">SK</div>
+              <div className="w-9 h-9 rounded-full border-[2px] border-white flex items-center justify-center text-[12px] font-semibold text-white bg-gradient-to-br from-sky-400 to-cyan-300 -ml-2.5">ML</div>
             </div>
-            <span className="text-sm text-slate-400">
-              Trusted by <strong className="text-slate-900">200+</strong> global law firms
+            <span className="text-sm" style={{ color: 'var(--text-muted)' }}>
+              Trusted by <strong style={{ color: 'var(--text)' }}>200+</strong> global law firms
             </span>
           </div>
         </div>
 
         <div
           className={`relative w-full max-w-[1200px] transition-all duration-1000 delay-300 ${
-            isPreviewRevealed
-              ? 'opacity-100 translate-y-0'
-              : 'opacity-0 translate-y-[100px]'
+            isPreviewRevealed ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-[100px]'
           }`}
           style={{ perspective: '1500px' }}
         >

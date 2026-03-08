@@ -3,7 +3,12 @@ import AppSidebar from '../../components/AppSidebar/AppSidebar';
 import '../../components/AppSidebar/SharedSidebar.css';
 import './ExecutionTracePage.css';
 
-const ExecutionTracePage = () => {
+interface ExecutionTracePageProps {
+  darkMode?: boolean;
+  toggleDarkMode?: () => void;
+}
+
+const ExecutionTracePage: React.FC<ExecutionTracePageProps> = ({ darkMode, toggleDarkMode }) => {
   const navigate = useNavigate();
 
   const handleBack = () => {
@@ -47,7 +52,7 @@ const ExecutionTracePage = () => {
 
   return (
     <div className="trace-page">
-      <AppSidebar activeItem="workspace" />
+      <AppSidebar activeItem="workspace" darkMode={darkMode} toggleDarkMode={toggleDarkMode} />
 
       <main className="trace-main">
         <header className="trace-header">
