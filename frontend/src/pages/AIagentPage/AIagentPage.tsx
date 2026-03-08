@@ -778,27 +778,31 @@ const AIagentPage: React.FC<{ darkMode?: boolean; toggleDarkMode?: () => void }>
             New Research Case
           </button>
           {toggleDarkMode && (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 4px' }}>
-      
-      <button
-        onClick={toggleDarkMode}
-        style={{
-          width: '44px', height: '24px', borderRadius: '999px',
-          border: 'none', cursor: 'pointer', padding: 0,
-          background: darkMode ? '#3b82f6' : '#e2e8f0',
-          transition: 'background 0.3s ease',
-          display: 'flex', alignItems: 'center',
-        }}
-      >
-        <span style={{
-          width: '18px', height: '18px', borderRadius: '50%',
-          background: 'white', display: 'flex', alignItems: 'center',
-          justifyContent: 'center',
-          transform: darkMode ? 'translateX(22px)' : 'translateX(3px)',
-          boxShadow: '0 1px 4px rgba(0,0,0,0.2)',
-        }} />
-      </button>
-    </div>
+  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 4px' }}>
+    <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+      {darkMode ? 'Dark Mode' : 'Light Mode'}
+    </span>
+    <button
+      onClick={toggleDarkMode}
+      style={{
+        width: '44px', height: '24px', borderRadius: '999px',
+        border: 'none', cursor: 'pointer', padding: 0,
+        background: darkMode ? '#3b82f6' : '#e2e8f0',
+        transition: 'background 0.3s ease',
+        display: 'flex', alignItems: 'center',
+      }}
+    >
+      <span className="toggle-thumb" style={{
+  width: '18px', height: '18px', borderRadius: '50%',
+  background: 'white', display: 'flex', alignItems: 'center',
+  justifyContent: 'center', overflow: 'hidden',
+  transform: darkMode ? 'translateX(22px)' : 'translateX(3px)',
+  boxShadow: '0 1px 4px rgba(0,0,0,0.2)',
+}}>
+  <img src={darkMode ? moonIcon : sunIcon} width="12" height="12" style={{ objectFit: 'contain' }} />
+</span>
+    </button>
+  </div>
   )}
           <div className="sidebar-user">
             <div className="sidebar-user-avatar">

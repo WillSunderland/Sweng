@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import propylonLogo from '../../assets/propylon_logo.svg';
 import sunIcon from "../../assets/lighModeSun.png";
 import moonIcon from "../../assets/darkModeMoon.png";
+
 export type SidebarActiveItem = 'workspace' | 'archive' | 'assistant';
 
 interface AppSidebarProps {
@@ -108,7 +109,6 @@ const AppSidebar: React.FC<AppSidebarProps> = ({ activeItem, darkMode, toggleDar
           New Research Case
         </button>
 
-        {/* Dark mode toggle */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 4px' }}>
           <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
             {darkMode ? 'Dark Mode' : 'Light Mode'}
@@ -126,11 +126,11 @@ const AppSidebar: React.FC<AppSidebarProps> = ({ activeItem, darkMode, toggleDar
             <span className="toggle-thumb" style={{
               width: '18px', height: '18px', borderRadius: '50%',
               background: 'white', display: 'flex', alignItems: 'center',
-              justifyContent: 'center',
+              justifyContent: 'center', overflow: 'hidden',
               transform: darkMode ? 'translateX(22px)' : 'translateX(3px)',
               boxShadow: '0 1px 4px rgba(0,0,0,0.2)',
             }}>
-              {darkMode ? <img src={moonIcon} width="24" /> : <img src={sunIcon} width="24" />}
+              <img src={darkMode ? moonIcon : sunIcon} width="12" height="12" style={{ objectFit: 'contain' }} />
             </span>
           </button>
         </div>
