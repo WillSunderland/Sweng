@@ -147,13 +147,13 @@ gap: 10px;
 }
 
 .trace-node.complete {
-border-color: #bbf7d0;
-background: #f0fdf4;
+  border-color: #bbf7d0;
+  background: color-mix(in srgb, var(--accent-green) 8%, var(--card-bg));
 }
 
 .trace-node.running {
-border-color: #93c5fd;
-background: #eff6ff;
+  border-color: #93c5fd;
+  background: color-mix(in srgb, var(--accent-blue) 8%, var(--card-bg));
 }
 
 .trace-node.pending {
