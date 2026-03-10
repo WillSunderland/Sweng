@@ -4,6 +4,7 @@ from pydantic import BaseModel
 from typing import List, Dict, Any
 import uuid
 from datetime import datetime, timezone
+import re
 from graph import app as graph_app
 from semantic_retrieval import SemanticRetriever
 from url_utils import resolve_source_url

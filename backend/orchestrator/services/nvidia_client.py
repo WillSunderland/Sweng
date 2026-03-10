@@ -7,8 +7,12 @@ from tenacity import (
     retry_if_exception_type,
 )
 
-from orchestrator.config import getSettings
-from orchestrator.services.llm_client import BaseLLMClient, LLMResponse
+try:
+    from orchestrator.config import getSettings
+    from orchestrator.services.llm_client import BaseLLMClient, LLMResponse
+except ModuleNotFoundError:
+    from config import getSettings
+    from services.llm_client import BaseLLMClient, LLMResponse
 
 logger = logging.getLogger(__name__)
 
