@@ -8,6 +8,8 @@ import re
 from graph import app as graph_app
 from semantic_retrieval import SemanticRetriever
 from url_utils import resolve_source_url
+from cache import QueryCache
+import re
 
 app = FastAPI(title="Orchestrator API")
 
@@ -50,6 +52,7 @@ DEFAULT_CARBON_G = 0.5
 # In-memory stores
 RUN_STORE = {}
 SOURCE_STORE = {}
+query_cache = QueryCache(ttl_seconds=3600, max_size=100)
 
 
 def get_iso_timestamp():
@@ -70,17 +73,24 @@ async def create_run(request: CreateRunRequest):
 
     # Trigger LangGraph workflow (async in background in real app)
     # For now, we just invoke it so we verify it works
-    initial_state = {
-        "query": request.query,
-        "processed_query": "",
-        "documents": [],
-        "answer": "",
-        "model_used": "",
-        "provider_used": "",
-        "token_count": 0,
-        "error": "",
-    }
-    result = await graph_app.ainvoke(initial_state)
+    # Check cache first
+    cached_result = query_cache.get(request.query)
+
+    if cached_result:
+        result = cached_result
+    else:
+        initial_state = {
+            "query": request.query,
+            "processed_query": "",
+            "documents": [],
+            "answer": "",
+            "model_used": "",
+            "provider_used": "",
+            "token_count": 0,
+            "error": "",
+        }
+        result = await graph_app.ainvoke(initial_state)
+        query_cache.set(request.query, result)
 
     # In a real app we'd update the run result here
     RUN_STORE[run_id]["result"] = result
