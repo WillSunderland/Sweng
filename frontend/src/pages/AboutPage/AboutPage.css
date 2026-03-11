@@ -1,0 +1,164 @@
+.about-page {
+  min-height: 100vh;
+  background: var(--bg);
+}
+
+.about-page .nav {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px 40px;
+  border-bottom: 1px solid var(--border-light);
+  background: var(--card-bg);
+}
+
+.about-page .nav h2 {
+  cursor: pointer;
+  color: var(--text);
+}
+
+.about-page .nav div {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
+.about-page .nav a {
+  text-decoration: none;
+  color: var(--text-body);
+}
+
+.hero {
+  text-align: center;
+  padding: 80px 20px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+}
+
+.hero h1 {
+  font-size: 42px;
+  margin-bottom: 20px;
+}
+
+.hero p {
+  font-size: 18px;
+}
+
+.mission {
+  padding: 60px 40px;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.mission h2 {
+  text-align: center;
+  font-size: 32px;
+  margin-bottom: 40px;
+  color: var(--text);
+}
+
+.mission-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 30px;
+}
+
+.mission-card {
+  padding: 30px;
+  border: 1px solid var(--border-light);
+  border-radius: 8px;
+  text-align: center;
+  background: var(--card-bg);
+}
+
+.mission-card h3 {
+  margin-bottom: 15px;
+  color: var(--text);
+}
+
+.mission-card p {
+  color: var(--text-body);
+}
+
+.team {
+  padding: 60px 40px;
+  background: var(--bg-light);
+}
+
+.team h2 {
+  text-align: center;
+  font-size: 32px;
+  margin-bottom: 40px;
+  color: var(--text);
+}
+
+.team-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 30px;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.team-card {
+  background: var(--card-bg);
+  padding: 30px;
+  border-radius: 8px;
+  text-align: center;
+  border: 1px solid var(--border-light);
+}
+
+.avatar {
+  width: 80px;
+  height: 80px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-size: 24px;
+  font-weight: 700;
+  margin: 0 auto 20px;
+}
+
+.team-card h3 {
+  margin-bottom: 10px;
+  color: var(--text);
+}
+
+.team-card p {
+  color: var(--text-body);
+  font-size: 14px;
+}
+
+.cta {
+  text-align: center;
+  padding: 80px 20px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+}
+
+.cta h2 {
+  font-size: 32px;
+  margin-bottom: 30px;
+}
+
+.about-page footer {
+  padding: 40px;
+  background: var(--card-bg);
+  border-top: 1px solid var(--border-light);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.footer-links {
+  display: flex;
+  gap: 20px;
+}
+
+.footer-links a {
+  text-decoration: none;
+  color: #3b82f6;
+}

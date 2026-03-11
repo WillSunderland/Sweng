@@ -1,0 +1,152 @@
+import React from 'react';
+import { useNavigate } from 'react-router-dom';
+import propylonLogo from '../../assets/propylon_logo.svg';
+import sunIcon from "../../assets/lighModeSun.png";
+import moonIcon from "../../assets/darkModeMoon.png";
+
+export type SidebarActiveItem = 'workspace' | 'archive' | 'assistant';
+
+interface AppSidebarProps {
+  activeItem: SidebarActiveItem;
+  darkMode: boolean;
+  toggleDarkMode: () => void;
+}
+
+const AppSidebar: React.FC<AppSidebarProps> = ({ activeItem, darkMode, toggleDarkMode }) => {
+  const navigate = useNavigate();
+
+  return (
+    <aside className="ai-sidebar">
+      <div className="sidebar-top">
+        <div className="sidebar-logo-area" onClick={() => navigate('/workspace')}>
+          <img src={propylonLogo} alt="Propylon" className="sidebar-logo-svg" />
+          <div className="sidebar-logo-text">
+            <div className="sidebar-brand">
+              <span className="brand-rws">rws</span>
+              <span className="brand-divider">|</span>
+              <span className="brand-propylon">Propylon</span>
+            </div>
+          </div>
+        </div>
+
+        <div className="sidebar-section">
+          <div className="sidebar-section-label">MAIN MENU</div>
+          <nav className="sidebar-nav">
+            <button
+              type="button"
+              className={`sidebar-nav-item${activeItem === 'workspace' ? ' active' : ''}`}
+              onClick={() => navigate('/workspace')}
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" />
+                <rect x="3" y="14" width="7" height="7" /><rect x="14" y="14" width="7" height="7" />
+              </svg>
+              <span>Workspace</span>
+            </button>
+
+            <div className="sidebar-nav-item">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                <polyline points="14 2 14 8 20 8" />
+              </svg>
+              <span>Drafts</span>
+            </div>
+
+            <div className="sidebar-nav-item">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+                <circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+                <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+              </svg>
+              <span>Shared with Team</span>
+            </div>
+
+            <button
+              type="button"
+              className={`sidebar-nav-item${activeItem === 'archive' ? ' active' : ''}`}
+              onClick={() => navigate('/history')}
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21 8v13H3V8" /><path d="M1 3h22v5H1z" />
+                <path d="M10 12h4" />
+              </svg>
+              <span>Archive</span>
+            </button>
+          </nav>
+        </div>
+
+        <div className="sidebar-section">
+          <div className="sidebar-section-label">INTERNAL TOOLS</div>
+          <nav className="sidebar-nav">
+            <div className="sidebar-nav-item">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
+              </svg>
+              <span>Propylon Research</span>
+            </div>
+
+            <button
+              type="button"
+              className={`sidebar-nav-item${activeItem === 'assistant' ? ' active' : ''}`}
+              onClick={() => navigate('/ai-agent')}
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 2a4 4 0 0 1 4 4v2H8V6a4 4 0 0 1 4-4z" />
+                <rect x="4" y="8" width="16" height="12" rx="2" />
+                <circle cx="9" cy="14" r="1" fill="currentColor" /><circle cx="15" cy="14" r="1" fill="currentColor" />
+              </svg>
+              <span>AI Assistant</span>
+            </button>
+          </nav>
+        </div>
+      </div>
+
+      <div className="sidebar-bottom">
+        <button className="new-case-btn" onClick={() => navigate('/workspace')}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+            <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
+          </svg>
+          New Research Case
+        </button>
+
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 4px' }}>
+          <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+            {darkMode ? 'Dark Mode' : 'Light Mode'}
+          </span>
+          <button
+            onClick={toggleDarkMode}
+            style={{
+              width: '44px', height: '24px', borderRadius: '999px',
+              border: 'none', cursor: 'pointer', padding: 0,
+              background: darkMode ? '#3b82f6' : '#e2e8f0',
+              transition: 'background 0.3s ease',
+              display: 'flex', alignItems: 'center',
+            }}
+          >
+            <span className="toggle-thumb" style={{
+              width: '18px', height: '18px', borderRadius: '50%',
+              background: 'white', display: 'flex', alignItems: 'center',
+              justifyContent: 'center', overflow: 'hidden',
+              transform: darkMode ? 'translateX(22px)' : 'translateX(3px)',
+              boxShadow: '0 1px 4px rgba(0,0,0,0.2)',
+            }}>
+              <img src={darkMode ? moonIcon : sunIcon} width="12" height="12" style={{ objectFit: 'contain' }} />
+            </span>
+          </button>
+        </div>
+
+        <div className="sidebar-user">
+          <div className="sidebar-user-avatar">
+            <img src="https://ui-avatars.com/api/?name=James+Sterling&background=e2e8f0&color=475569&size=36&font-size=0.4&bold=true" alt="JS" />
+          </div>
+          <div className="sidebar-user-info">
+            <span className="sidebar-user-name">James Sterling</span>
+            <span className="sidebar-user-role">Senior Counsel</span>
+          </div>
+        </div>
+      </div>
+    </aside>
+  );
+};
+
+export default AppSidebar;
