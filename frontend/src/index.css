@@ -1,3 +1,52 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+@keyframes impactMarquee {
+	0% {
+		transform: translateX(0%);
+	}
+	100% {
+		transform: translateX(-50%);
+	}
+}
+
+@keyframes sponsorsMarquee {
+	0% {
+		transform: translateX(0%);
+	}
+	100% {
+		transform: translateX(-50%);
+	}
+}
+
+.impact-marquee-track {
+	min-width: max-content;
+	animation: impactMarquee 44s linear infinite;
+}
+
+.sponsors-marquee-track {
+	min-width: max-content;
+	animation: sponsorsMarquee 70s linear infinite;
+}
+
+.impact-stars {
+	background-image:
+		radial-gradient(circle at 10% 20%, rgba(255, 255, 255, 0.2) 0 1px, transparent 1px),
+		radial-gradient(circle at 70% 40%, rgba(255, 255, 255, 0.18) 0 1px, transparent 1px),
+		radial-gradient(circle at 40% 75%, rgba(255, 255, 255, 0.14) 0 1px, transparent 1px);
+	background-size: 140px 140px;
+}
+
+.trace-slide-left {
+	transform: translateX(-46px);
+}
+
+.trace-slide-right {
+	transform: translateX(46px);
+}
+
+.trace-visible {
+	opacity: 1;
+	transform: translateX(0);
+}

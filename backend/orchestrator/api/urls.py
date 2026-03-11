@@ -1,6 +1,9 @@
 from django.urls import path
 
-from orchestrator.api.views.runViews import createRun, listRuns, getRun, getSource
+try:
+    from orchestrator.api.views.runViews import createRun, listRuns, getRun, getSource
+except ModuleNotFoundError:
+    from api.views.runViews import createRun, listRuns, getRun, getSource
 
 urlpatterns = [
     # Runs

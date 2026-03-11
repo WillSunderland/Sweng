@@ -1,4 +1,6 @@
 import { useNavigate, useParams } from 'react-router-dom';
+import AppSidebar from '../components/AppSidebar';
+import '../styles/SharedSidebar.css';
 import '../styles/AnalysisPage.css';
 
 const AnalysisPage = () => {
@@ -7,18 +9,12 @@ const AnalysisPage = () => {
 
   return (
     <div className="analysis-page">
-      <aside className="sidebar">
-        <h3 onClick={() => navigate('/')}>RWS Propylon</h3>
-        <nav>
-          <div onClick={() => navigate('/workspace')}>Dashboard</div>
-          <div className="active">Research</div>
-          <div onClick={() => navigate('/history')}>Archive</div>
-        </nav>
-      </aside>
+      <AppSidebar activeItem="workspace" />
 
       <main className="analysis-content">
-        <h1>Legal Analysis: Residential Tenancies Act 2024</h1>
-        
+        <p className="analysis-kicker">LEGAL ANALYSIS</p>
+        <h1>Residential Tenancies Act 2024</h1>
+
         <div className="key-finding">
           <h3>KEY FINDING</h3>
           <p>The 2024 Amendment strictly regulates rent increases in Rent Pressure Zones, introducing mandatory 90-day notice periods.</p>
@@ -44,12 +40,12 @@ const AnalysisPage = () => {
           </div>
         </section>
 
-        <button className="btn btn-primary" onClick={() => navigate(`/trace/${id}`)}>
+        <button className="analysis-primary-btn" onClick={() => navigate(`/trace/${id}`)}>
           View Full Trace
         </button>
       </main>
 
-      <aside className="right-sidebar">
+      <aside className="analysis-right-sidebar">
         <div className="sidebar-box">
           <h4>AI REASONING</h4>
           <p>✓ Semantic Search</p>

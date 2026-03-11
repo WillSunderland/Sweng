@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import '../styles/WorkspacePage.css';
+import AppSidebar from '../components/AppSidebar';
+import '../styles/SharedSidebar.css';
+import '../styles/Workspacepage.css';
 
 type CaseStatus = 'review-needed' | 'processing' | 'completed' | 'draft';
 type ActionType = 'analysis' | 'trace' | 'report' | 'draft';
@@ -96,63 +98,7 @@ const WorkspacePage: React.FC = () => {
 
   return (
     <div className="workspace-page">
-      {/* Left Sidebar */}
-      <aside className="left-sidebar">
-        <div className="logo-section">
-          <div className="logo-icon">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-              <rect width="24" height="24" rx="4" fill="#2563eb"/>
-              <path d="M8 8h8M8 12h8M8 16h5" stroke="white" strokeWidth="2" strokeLinecap="round"/>
-            </svg>
-          </div>
-          <div className="logo-text">
-            <div className="logo-title" onClick={() => navigate('/')}>RWS| PROPYLON</div>
-            <div className="logo-subtitle">Legal AI Workspace</div>
-          </div>
-        </div>
-
-        <nav className="sidebar-nav">
-          <div className="nav-item active">
-            <span className="nav-icon">📋</span>
-            <span>Workspace</span>
-          </div>
-          <div className="nav-item">
-            <span className="nav-icon">📄</span>
-            <span>Drafts</span>
-          </div>
-          <div className="nav-item">
-            <span className="nav-icon">👥</span>
-            <span>Shared with Team</span>
-          </div>
-          <div className="nav-item" onClick={() => navigate('/history')}>
-            <span className="nav-icon">📁</span>
-            <span>Archive</span>
-          </div>
-        </nav>
-
-        <div className="sidebar-divider"></div>
-
-        <div className="sidebar-section">
-          <div className="section-label">INTERNAL TOOLS</div>
-          <div className="nav-item">
-            <span className="nav-icon">🔍</span>
-            <span>Parallel Research</span>
-          </div>
-          {/* AI Assistant now navigates to the full AI Agent page */}
-          <div className="nav-item" onClick={() => navigate('/ai-agent')}>
-            <span className="nav-icon">🤖</span>
-            <span>AI Assistant</span>
-          </div>
-        </div>
-
-        <div className="sidebar-user">
-          <img src="https://ui-avatars.com/api/?name=James+Sterling&background=2563eb&color=fff" alt="User" className="sidebar-user-avatar" />
-          <div className="sidebar-user-info">
-            <div className="sidebar-user-name">James Sterling</div>
-            <div className="sidebar-user-role">Senior Counsel</div>
-          </div>
-        </div>
-      </aside>
+      <AppSidebar activeItem="workspace" />
 
       <main className="main-workspace">
         <header className="workspace-header">

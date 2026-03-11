@@ -143,6 +143,14 @@ class SearchStore:
 
         helpers.bulk(self.client, actions)
 
+    def index_exists(self):
+        return self.client.indices.exists(index=self.index_name)
+
+    def bill_exists(self, bill_id):
+        body = {"size": 0, "query": {"term": {"bill_id": bill_id}}}
+        res = self.client.search(index=self.index_name, body=body)
+        return res["hits"]["total"]["value"] > 0
+
     def keyword_search(self, query, k=5):
         """
         Standard text search on chunk_text (works on both ES and OpenSearch).
