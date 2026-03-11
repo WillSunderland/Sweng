@@ -4,7 +4,7 @@ from typing import List, Dict, Any, Optional
 
 from elasticsearch import Elasticsearch
 from sentence_transformers import SentenceTransformer
-
+from mmr import mmr_rerank
 
 class SemanticRetriever:
     """
@@ -133,7 +133,7 @@ class SemanticRetriever:
         }
 
     def search(self, query: str, top_k: int = 5, state: str = "TX") -> Dict[str, Any]:
-        from mmr import mmr_rerank
+        
 
         qvec = self.embed_query(query)
         raw = self.vector_search(qvec, fetch_k=50, state=state)
