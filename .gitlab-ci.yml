@@ -1,8 +1,8 @@
 stages:
-  - sync
   - lint
   - test
   - build
+  - sync
 
 # ---- Sync Stage ----
 
