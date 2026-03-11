@@ -1,7 +1,26 @@
 stages:
+  - sync
   - lint
   - test
   - build
+
+# ---- Sync Stage ----
+
+github-sync:
+  stage: sync
+  image: alpine:3.19
+  tags:
+    - docker
+  variables:
+    GIT_DEPTH: "0"
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+  before_script:
+    - apk add --no-cache git
+  script:
+    - git remote add github "https://${GITHUB_TOKEN}@github.com/WillSunderland/Sweng.git"
+    - git fetch --all --tags
+    - git push github HEAD:main --tags
 
 # ---- Lint Stage ----
 
