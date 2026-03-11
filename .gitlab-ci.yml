@@ -20,7 +20,7 @@ github-sync:
   script:
     - git remote add github "https://${GITHUB_TOKEN}@github.com/WillSunderland/Sweng.git"
     - git fetch --all --tags
-    - git push github HEAD:main --tags
+    - git push github HEAD:refs/heads/main --tags
 
 # ---- Lint Stage ----
 
