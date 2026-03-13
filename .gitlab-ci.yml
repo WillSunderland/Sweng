@@ -101,6 +101,18 @@ backend-integration-tests:
         exit 0
       fi
       exit $status
+frontend-tests:
+  stage: test
+  image: node:20-alpine
+  tags:
+    - docker
+  needs:
+    - frontend-lint
+  before_script:
+    - cd frontend
+    - npm ci
+  script:
+    - npm run test -- --run
 
 frontend-build:
   stage: build
