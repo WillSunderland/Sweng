@@ -10,3 +10,5 @@ pydantic-settings>=2.0.0
 langgraph>=0.0.10
 langchain_openai
 black
+numpy>=1.26.0
+elasticsearch>=8.11.0
