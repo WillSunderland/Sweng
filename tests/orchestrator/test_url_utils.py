@@ -63,5 +63,13 @@ def test_resolve_source_url_from_source_id():
     )
 
 
+def test_resolve_source_url_from_camel_case_fields():
+    source = {"billType": "s", "billNumber": "12", "congress": "118"}
+    assert (
+        resolve_source_url(source)
+        == "https://www.congress.gov/bill/118th-congress/senate-bill/12"
+    )
+
+
 def test_resolve_source_url_none():
     assert resolve_source_url({"title": "Unknown"}) is None
