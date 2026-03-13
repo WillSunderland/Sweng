@@ -50,11 +50,10 @@ const openRegisterModal = () =>
  * The modal panel — scoped queries are more reliable than global screen queries
  * when there are similarly-named elements outside the modal.
  */
-const getModalPanel = () =>
-  document.querySelector('.fixed.inset-0 .relative.bg-white') as HTMLElement;
+const getModalPanel = () => screen.getByTestId('auth-modal-panel');
 
-/** The first button in the modal panel is always the icon-only close (×) button. */
-const getCloseButton = () => within(getModalPanel()).getAllByRole('button')[0];
+/** Close button has an explicit aria-label for stable selection. */
+const getCloseButton = () => within(getModalPanel()).getByRole('button', { name: /close modal/i });
 
 /** Email inputs are type="email" which maps to ARIA role "textbox". */
 const getEmailInput = () => screen.getByRole('textbox');

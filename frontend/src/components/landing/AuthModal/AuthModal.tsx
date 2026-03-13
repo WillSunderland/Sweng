@@ -22,12 +22,14 @@ export const AuthModal: React.FC<AuthModalProps> = ({ view, onClose, onSwitchVie
 
       <div
         className="relative w-[440px] rounded-2xl shadow-2xl p-8 animate-in zoom-in-95 duration-200"
-style={{ background: 'var(--card-bg)', color: 'var(--text)' }}
+        style={{ background: 'var(--card-bg)', color: 'var(--text)' }}
+        data-testid="auth-modal-panel"
         onClick={(e) => e.stopPropagation()}
       >
         <button
           onClick={onClose}
           className="absolute top-4 right-4 w-8 h-8 flex items-center justify-center rounded-full text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-all"
+          aria-label="Close modal"
         >
           <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <path d="M18 6L6 18M6 6l12 12" />
