@@ -22,35 +22,115 @@ github-sync:
     - git fetch --all --tags
     - git push github HEAD:refs/heads/main --tags
 
-# ---- Lint Stage ----
+variables:
+  PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
+  NPM_CONFIG_CACHE: "$CI_PROJECT_DIR/.cache/npm"
+
+# ============================================================
+# STAGE 1: LINT
+# ============================================================
 
 backend-lint:
   stage: lint
   image: python:3.11-slim
   tags:
     - docker
+  cache:
+    key: backend-lint
+    paths:
+      - .cache/pip
   script:
-    - pip install black
+    - pip install black ruff
     - black --check backend/
+    - ruff check backend/ --select E,W,F --ignore E501
 
 frontend-lint:
   stage: lint
   image: node:20-alpine
   tags:
     - docker
+  cache:
+    key: frontend-deps
+    paths:
+      - frontend/node_modules/
+      - .cache/npm
   before_script:
     - cd frontend
     - npm ci
   script:
     - npm run lint
 
-# ---- Build Stage ----
+# ============================================================
+# STAGE 2: TEST
+# ============================================================
+
+backend-test:
+  stage: test
+  image: python:3.11-slim
+  tags:
+    - docker
+  cache:
+    key: backend-deps
+    paths:
+      - .cache/pip
+  before_script:
+    - pip install -r backend/orchestrator/requirements.txt
+    - pip install -r backend/mcp_server/requirements.txt
+    - pip install pytest pytest-cov
+  script:
+    - |
+      PYTHONPATH=. pytest backend/ --ignore=backend/ingestion/test_queries.py --cov=backend --cov-report=term-missing --cov-report=xml:coverage.xml --junitxml=report.xml -v || EXIT_CODE=$?
+      EXIT_CODE=${EXIT_CODE:-0}
+      if [ "$EXIT_CODE" -eq 5 ]; then
+        echo "No tests collected (exit 5) — treating as success."
+        exit 0
+      else
+        exit "$EXIT_CODE"
+      fi
+  coverage: '/(?i)total.*? (100(?:\.0+)?\%|[1-9]?\d(?:\.\d+)?\%)$/'
+  artifacts:
+    when: always
+    reports:
+      junit: report.xml
+      coverage_report:
+        coverage_format: cobertura
+        path: coverage.xml
+    expire_in: 7 days
+
+frontend-test:
+  stage: test
+  image: node:20-alpine
+  tags:
+    - docker
+  cache:
+    key: frontend-deps
+    paths:
+      - frontend/node_modules/
+      - .cache/npm
+  before_script:
+    - cd frontend
+    - npm ci
+  script:
+    - npx vitest run --passWithNoTests --reporter=junit --outputFile=../report.xml
+  artifacts:
+    when: always
+    reports:
+      junit: report.xml
+    expire_in: 7 days
+
+# ============================================================
+# STAGE 3: BUILD
+# ============================================================
 
 backend-build:
   stage: build
   image: python:3.11-slim
   tags:
     - docker
+  cache:
+    key: backend-deps
+    paths:
+      - .cache/pip
   script:
     - pip install -r backend/orchestrator/requirements.txt
     - pip install -r backend/mcp_server/requirements.txt
@@ -109,6 +189,11 @@ frontend-build:
     - docker
   needs:
     - frontend-lint
+  cache:
+    key: frontend-deps
+    paths:
+      - frontend/node_modules/
+      - .cache/npm
   before_script:
     - cd frontend
     - npm ci

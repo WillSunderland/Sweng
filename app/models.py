@@ -18,6 +18,21 @@ class QueryRequest(BaseModel):
             "example": "What are the latest regulations on data privacy?"
         },
     )
+    chat_history: list["ChatMessage"] = Field(
+        default_factory=list,
+        description="Optional prior conversation turns used for follow-up rewriting.",
+    )
+    max_reasoning_steps: int | None = Field(
+        default=None,
+        ge=1,
+        le=5,
+        description="Maximum number of search/read reasoning loops.",
+    )
+
+
+class ChatMessage(BaseModel):
+    role: str
+    content: str
 
 
 class SearchResult(BaseModel):
@@ -43,8 +58,13 @@ class QueryResponse(BaseModel):
     sources: list[SourceInfo] = Field(default_factory=list)
     model_used: str | None = None
     provider: str | None = None
+    carbonCountInTons: float = 0.0
     token_count: int = 0
     error: str | None = None
+    rewritten_query: str | None = None
+    plan: list[str] = Field(default_factory=list)
+    reasoning_steps: list[dict[str, Any]] = Field(default_factory=list)
+    retrieval_skipped: bool = False
 
 
 class HealthResponse(BaseModel):
@@ -54,3 +74,6 @@ class HealthResponse(BaseModel):
     hf_llm: str | None = None
     version: str
     isOpensearchConnected: bool
+
+
+QueryRequest.model_rebuild()

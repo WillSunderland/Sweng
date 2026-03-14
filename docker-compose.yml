@@ -3,7 +3,9 @@ version: '3.8'
 services:
   # 1. The Orchestrator (LangGraph + API)
   orchestrator:
-    build: ./backend/orchestrator
+    build:
+      context: .
+      dockerfile: backend/orchestrator/Dockerfile
     ports:
       - "8000:8000"
     environment:

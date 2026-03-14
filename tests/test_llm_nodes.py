@@ -74,6 +74,7 @@ def test_output_formatter_success(sample_state):
     assert response["answer"] == "Final Answer"
     assert len(response["sources"]) == 3
     assert response["sources"][0]["title"] == "Nevada Tax Reform Act"
+    assert response["carbonCountInTons"] > 0
 
 
 def test_output_formatter_error(sample_state):
@@ -85,3 +86,4 @@ def test_output_formatter_error(sample_state):
 
     assert "error" in response["answer"]
     assert response["sources"] == []
+    assert response["carbonCountInTons"] > 0
