@@ -2,6 +2,7 @@ fastapi
 uvicorn
 langgraph
 elasticsearch>=8.0.0,<9.0.0
+opensearch-py>=2.4.0
 sentence-transformers
 openai
 httpx
