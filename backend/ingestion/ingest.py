@@ -4,7 +4,7 @@ import json
 from backend.ingestion.config import get_settings
 import re
 from backend.ingestion.congress_client import CongressClient
-from backend.ingestion.chunking import make_chunks
+from backend.ingestion.chunking import chunk_legal_document
 from backend.ingestion.embeddings import Embedder
 from backend.ingestion.search_store import SearchStore
 
@@ -255,16 +255,19 @@ def main():
         print(f"  Title: {meta['title'][:80]}...")
         print(f"  Text length: {len(text)} chars")
 
-        chunks = make_chunks(text, chunk_size=1000, overlap=150)
-        vectors = embedder.embed_texts(chunks)
+        chunk_objects = chunk_legal_document(text, chunk_size=1000, overlap=150)
 
+        chunk_texts = [c["text"] for c in chunk_objects]
+        vectors = embedder.embed_texts(chunk_texts)
         if not vectors:
             continue
 
         if vector_dim is None:
             vector_dim = len(vectors[0])
 
-        for ci in range(len(chunks)):
+        for ci in range(len(chunk_objects)):
+            chunk = chunk_objects[ci]
+
             all_docs.append(
                 {
                     "doc_id": f"{meta['bill_id']}_{ci}",
@@ -275,9 +278,11 @@ def main():
                     "policy_area": meta.get("policy_area", ""),
                     "bill_type": meta.get("bill_type", ""),
                     "bill_number": meta.get("bill_number", ""),
-                    "latest_action": meta.get("latest_action", ""),
+                    "latest_action": meta.get("latest_action"),
+                    # NEW metadata
+                    "section": chunk.get("section", ""),
                     "chunk_id": ci,
-                    "chunk_text": chunks[ci],
+                    "chunk_text": chunk["text"],
                     "embedding": vectors[ci],
                 }
             )

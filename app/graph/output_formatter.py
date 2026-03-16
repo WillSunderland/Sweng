@@ -40,17 +40,19 @@ def llmOutputNode(state: GraphState) -> dict[str, Any]:
 
     for hit in hits:
         source_data = hit.get("_source", {})
-        formatted_sources.append({
-            "title": source_data.get("title", "Unknown"),
-            "bill_id": source_data.get("bill_id", ""),
-            "state": source_data.get("state", ""),
-            "bill_type": source_data.get("bill_type", ""),
-            "bill_number": source_data.get("bill_number", ""),
-            "session": source_data.get("session", ""),
-            "policy_area": source_data.get("policy_area", ""),
-            "source_file": f"{source_data.get('state', '')} {source_data.get('bill_type', '')} {source_data.get('bill_number', '')}".strip(),
-            "relevance_score": hit.get("_score", 0.0)
-        })
+        formatted_sources.append(
+            {
+                "title": source_data.get("title", "Unknown"),
+                "bill_id": source_data.get("bill_id", ""),
+                "state": source_data.get("state", ""),
+                "bill_type": source_data.get("bill_type", ""),
+                "bill_number": source_data.get("bill_number", ""),
+                "session": source_data.get("session", ""),
+                "policy_area": source_data.get("policy_area", ""),
+                "source_file": f"{source_data.get('state', '')} {source_data.get('bill_type', '')} {source_data.get('bill_number', '')}".strip(),
+                "relevance_score": hit.get("_score", 0.0),
+            }
+        )
 
     carbon_count_in_tons = estimate_carbon_tons(
         state.get("model_used"),

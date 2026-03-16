@@ -46,7 +46,7 @@ class SemanticRetriever:
         if self._embedder is None:
             self._embedder = SentenceTransformer(self.embed_model)
         return self._embedder
-    
+
     def get_cross_encoder(self) -> CrossEncoderReranker:
         if self._cross_encoder is None:
             self._cross_encoder = CrossEncoderReranker()

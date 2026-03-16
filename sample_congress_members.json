@@ -1,0 +1,65 @@
+[
+  {
+    "bioguideId": "C001098",
+    "depiction": {
+      "attribution": "<a href=\"http://www.senate.gov/artandhistory/history/common/generic/Photo_Collection_of_the_Senate_Historical_Office.htm\">Courtesy U.S. Senate Historical Office</a>",
+      "imageUrl": "https://www.congress.gov/img/member/c001098_200.jpg"
+    },
+    "district": null,
+    "name": "Cruz, Ted",
+    "partyName": "Republican",
+    "state": "Texas",
+    "terms": {
+      "item": [
+        {
+          "chamber": "Senate",
+          "startYear": 2013
+        }
+      ]
+    },
+    "updateDate": "2026-03-08T10:31:01Z",
+    "url": "https://api.congress.gov/v3/member/C001098?format=json"
+  },
+  {
+    "bioguideId": "C001056",
+    "depiction": {
+      "attribution": "<a href=\"http://www.senate.gov/artandhistory/history/common/generic/Photo_Collection_of_the_Senate_Historical_Office.htm\">Courtesy U.S. Senate Historical Office</a>",
+      "imageUrl": "https://www.congress.gov/img/member/c001056_200.jpg"
+    },
+    "district": null,
+    "name": "Cornyn, John",
+    "partyName": "Republican",
+    "state": "Texas",
+    "terms": {
+      "item": [
+        {
+          "chamber": "Senate",
+          "startYear": 2002
+        }
+      ]
+    },
+    "updateDate": "2026-03-08T10:30:53Z",
+    "url": "https://api.congress.gov/v3/member/C001056?format=json"
+  },
+  {
+    "bioguideId": "C001120",
+    "depiction": {
+      "attribution": "Image courtesy of the Member",
+      "imageUrl": "https://www.congress.gov/img/member/698a13d0a7af728d4e6c2038_200.jpg"
+    },
+    "district": 2,
+    "name": "Crenshaw, Dan",
+    "partyName": "Republican",
+    "state": "Texas",
+    "terms": {
+      "item": [
+        {
+          "chamber": "House of Representatives",
+          "startYear": 2019
+        }
+      ]
+    },
+    "updateDate": "2026-02-09T17:22:01Z",
+    "url": "https://api.congress.gov/v3/member/C001120?format=json"
+  }
+]

@@ -50,8 +50,13 @@ const openRegisterModal = () =>
  * The modal panel — scoped queries are more reliable than global screen queries
  * when there are similarly-named elements outside the modal.
  */
-const getModalPanel = () =>
-  document.querySelector('.fixed.inset-0 .relative.bg-white') as HTMLElement;
+const getModalPanel = () => {
+  const panel = document.querySelector('.fixed.inset-0 > .relative') as HTMLElement | null;
+  if (!panel) {
+    throw new Error('Modal panel not found');
+  }
+  return panel;
+};
 
 /** The first button in the modal panel is always the icon-only close (×) button. */
 const getCloseButton = () => within(getModalPanel()).getAllByRole('button')[0];
@@ -161,6 +166,7 @@ describe('LandingPage', () => {
       openLoginModal();
       expect(getEmailInput()).toBeInTheDocument();
 
+      expect(getModalPanel()).toBeInTheDocument();
       fireEvent.click(getCloseButton());
 
       expect(document.querySelectorAll('input[type="email"]')).toHaveLength(0);
@@ -182,7 +188,9 @@ describe('LandingPage', () => {
       openLoginModal();
 
       // Inner panel has stopPropagation — clicking it must NOT close the modal
-      fireEvent.click(getModalPanel());
+      const panel = getModalPanel();
+      expect(panel).toBeInTheDocument();
+      fireEvent.click(panel);
 
       expect(getEmailInput()).toBeInTheDocument();
     });

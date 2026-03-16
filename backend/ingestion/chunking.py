@@ -1,4 +1,5 @@
 # backend/ingestion/chunking.py
+import re
 
 
 def make_chunks(text, chunk_size=1000, overlap=150):
@@ -41,4 +42,57 @@ def make_chunks(text, chunk_size=1000, overlap=150):
             break
         start += step
 
+    return chunks
+
+
+def split_sections(text):
+    """
+    Detect Legal sections headers and split documents
+
+    Examples:
+        Section 1
+        Section 2.
+        SEC. 3
+    """
+
+    pattern = r"(Section\s+\d+\.?|SEC\.\s*\d+)"
+    parts = re.split(pattern, text)
+
+    sections = []
+    current_header = "Introduction"
+
+    for part in parts:
+        part = part.strip()
+        if not part:
+            continue
+        if re.match(pattern, part):
+            current_header = part
+        else:
+            sections.append({"section": current_header, "text": part})
+    return sections
+
+
+def chunk_legal_document(text, chunk_size=1000, overlap=150):
+    """
+    Full pipeline for legal document chunking.
+
+    Steps:
+      1. Detect sections
+      2. Chunk each section with overlap
+      3. Preserve section metadata
+    """
+
+    chunks = []
+
+    sections = split_sections(text)
+
+    for sec in sections:
+
+        section_name = sec["section"]
+        section_text = sec["text"]
+
+        sub_chunks = make_chunks(section_text, chunk_size, overlap)
+
+        for c in sub_chunks:
+            chunks.append({"section": section_name, "text": c})
     return chunks
