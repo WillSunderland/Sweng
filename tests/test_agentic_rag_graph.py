@@ -26,7 +26,9 @@ async def test_query_rewrite_uses_chat_history():
         "reasoning_steps": [],
     }
 
-    with patch("app.graph.nodes_llm._generate_control_json", new_callable=AsyncMock) as mock_control:
+    with patch(
+        "app.graph.nodes_llm._generate_control_json", new_callable=AsyncMock
+    ) as mock_control:
         mock_control.return_value = {
             "rewritten_query": "What notice period does Texas SB 2 require?",
             "reason": "Expanded the follow-up using prior chat context.",
@@ -44,12 +46,17 @@ async def test_prefetch_decision_can_skip_retrieval():
         "query": "summarize that",
         "standaloneQuery": "summarize that",
         "chat_history": [
-            {"role": "assistant", "content": "The bill adds a 90-day notice requirement."},
+            {
+                "role": "assistant",
+                "content": "The bill adds a 90-day notice requirement.",
+            },
         ],
         "reasoning_steps": [],
     }
 
-    with patch("app.graph.nodes_llm._generate_control_json", new_callable=AsyncMock) as mock_control:
+    with patch(
+        "app.graph.nodes_llm._generate_control_json", new_callable=AsyncMock
+    ) as mock_control:
         mock_control.return_value = {
             "needs_retrieval": False,
             "reason": "The user explicitly asked about the prior answer only.",
@@ -80,7 +87,9 @@ async def test_read_node_requests_follow_up_search():
         "reasoning_steps": [],
     }
 
-    with patch("app.graph.nodes_llm._generate_control_json", new_callable=AsyncMock) as mock_control:
+    with patch(
+        "app.graph.nodes_llm._generate_control_json", new_callable=AsyncMock
+    ) as mock_control:
         mock_control.return_value = {
             "enough_context": False,
             "summary": "Only one bill was found, so a broader comparison search is needed.",
@@ -166,8 +175,11 @@ async def test_graph_executes_multi_step_loop_with_context_continuity():
         total_tokens=44,
     )
 
-    with patch("app.graph.nodes_llm._generate_control_json", new_callable=AsyncMock) as mock_control, \
-         patch("app.graph.nodes_llm.nvidia_client.generate", new_callable=AsyncMock) as mock_generate:
+    with patch(
+        "app.graph.nodes_llm._generate_control_json", new_callable=AsyncMock
+    ) as mock_control, patch(
+        "app.graph.nodes_llm.nvidia_client.generate", new_callable=AsyncMock
+    ) as mock_generate:
         mock_control.side_effect = [
             {
                 "rewritten_query": "Compare the Texas SB 2 notice period with similar Texas bills.",
@@ -200,7 +212,10 @@ async def test_graph_executes_multi_step_loop_with_context_continuity():
 
         result = await graph.ainvoke(state)
 
-    assert result["rewrittenQuery"] == "Compare the Texas SB 2 notice period with similar Texas bills."
+    assert (
+        result["rewrittenQuery"]
+        == "Compare the Texas SB 2 notice period with similar Texas bills."
+    )
     assert result["search_iteration"] == 2
     assert result["searchQueries"] == [
         "Texas SB 2 notice period comparison",
