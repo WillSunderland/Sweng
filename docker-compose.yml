@@ -78,6 +78,6 @@ services:
       - EMBED_MODEL=all-MiniLM-L6-v2
       - STATE_CODE=TX
 
-      - SEARCH_LIMIT=20
+      - SEARCH_LIMIT=100
     depends_on:
       - elasticsearch
