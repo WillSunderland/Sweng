@@ -16,6 +16,8 @@ services:
       - HF_TIMEOUT=${HF_TIMEOUT:-180}
       - MCP_SERVER_URL=http://mcp-server:8001
       - ELASTICSEARCH_URL=http://elasticsearch:9200
+      - OPENSEARCH_HOST=elasticsearch
+      - OPENSEARCH_INDEX=legislation_chunks
       - INDEX_NAME=${INDEX_NAME:-legislation_chunks}
       - EMBED_MODEL=${EMBED_MODEL:-all-MiniLM-L6-v2}
       - STATE_CODE=${STATE_CODE:-TX}
@@ -24,6 +26,7 @@ services:
     depends_on:
       - mcp-server
       - hf-server
+      - elasticsearch
 
   # 2. The MCP Server (Tools + ElasticSearch Client)
   mcp-server:
@@ -31,7 +34,7 @@ services:
     ports:
       - "8001:8001"
     environment:
-      - ELASTICSEARCH_URL=${ELASTICSEARCH_URL}
+      - ELASTICSEARCH_URL=http://elasticsearch:9200
 
   # 3. The Frontend (React UI)
   frontend:
@@ -77,7 +80,6 @@ services:
       - INDEX_NAME=legislation_chunks
       - EMBED_MODEL=all-MiniLM-L6-v2
       - STATE_CODE=TX
-
       - SEARCH_LIMIT=100
     depends_on:
       - elasticsearch
