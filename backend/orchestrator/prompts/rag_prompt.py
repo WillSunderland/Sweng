@@ -6,14 +6,13 @@ SYSTEM_PROMPT = """You are a legal research assistant that answers questions abo
 5. Be precise and concise."""
 
 
-def build_rag_user_prompt(query: str, documents: list[dict], chat_history: list[dict] | None = None) -> str:
+def build_rag_user_prompt(query: str, documents: list[dict]) -> str:
     """
     Formats the user query and retrieved documents into a single prompt.
 
     Args:
         query: The user's natural language query
         documents: List of document dicts with keys like 'title', 'chunk_text'
-        chat_history: Optional list of previous turns, each a dict with 'role' and 'content'
 
     Returns:
         The formatted user prompt string
@@ -27,7 +26,7 @@ def build_rag_user_prompt(query: str, documents: list[dict], chat_history: list[
         source_title = doc.get("title", "Unknown Source")
         chunk_text = doc.get("chunk_text", "").strip()
         if len(chunk_text) > max_chunk_chars:
-            chunk_text = chunk_text[:max_chunk_chars].rstrip() + "..."
+            chunk_text = chunk_text[:max_chunk_chars].rstrip() + "…"
 
         state = doc.get("state", "Unknown")
         bill_type = doc.get("bill_type", "")
@@ -47,21 +46,6 @@ def build_rag_user_prompt(query: str, documents: list[dict], chat_history: list[
 
     context_str = "\n".join(context_parts)
 
-    # Build chat history section — cap at last 6 turns to stay within token limits
-    history_str = ""
-    if chat_history:
-        lines = []
-        for message in chat_history[-6:]:
-            role = message.get("role", "user").upper()
-            content = message.get("content", "").strip()
-            if content:
-                lines.append(f"{role}: {content}")
-        if lines:
-            history_str = "Previous conversation:\n" + "\n".join(lines) + "\n\n"
-
     return (
-        f"{history_str}"
-        "Here are the relevant documents:\n\n"
-        f"{context_str}\n\n"
-        f"Question: {query}"
+        "Here are the relevant documents:\n\n" f"{context_str}\n\n" f"Question: {query}"
     )
