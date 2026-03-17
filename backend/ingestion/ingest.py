@@ -17,7 +17,7 @@ def strip_html(text):
 
 
 def extract_text_from_congress_bill(
-    bill_detail, summaries, actions=None, subjects=None, state_code="TX"
+    bill_detail, summaries, actions=None, subjects=None, bill_text=None, state_code="TX"
 ):
     """
     Convert Congress.gov bill detail + summaries into:
@@ -52,7 +52,6 @@ def extract_text_from_congress_bill(
         "latest_action": str(latest_action),
     }
 
-    # Build searchable text: title + policy area + summaries
     text_parts = [str(title).strip()]
 
     if policy_area:
@@ -63,8 +62,12 @@ def extract_text_from_congress_bill(
         if clean_text:
             text_parts.append(clean_text)
 
-    # Fallback if no summaries available
-    if len(text_parts) <= 2 and latest_action:
+    # Use full bill text if available — much richer than summaries
+    if bill_text and bill_text.strip():
+        clean_bill_text = strip_html(bill_text)[:6000]
+        text_parts.append(clean_bill_text)
+    elif len(text_parts) <= 2 and latest_action:
+        # Fallback if no summaries and no bill text
         text_parts.append(latest_action)
 
     if subjects:
@@ -151,7 +154,6 @@ def discover_tx_bills(client, state_code, congress_number, limit):
 def main():
     settings = get_settings()
 
-    # 1) Create clients
     client = CongressClient(settings["CONGRESS_GOV_API_KEY"])
 
     store = SearchStore(
@@ -163,11 +165,7 @@ def main():
 
     embedder = Embedder(settings["EMBED_MODEL"])
 
-    # 2) Decide which bills to ingest:
-    #    - If BILL_ID is set in env, ingest that single bill
-    #    - Otherwise discover bills using TX search query
     if settings["BILL_ID"]:
-        # BILL_ID format: "118/hr/1234" or "118-hr-1234"
         parts = settings["BILL_ID"].replace("-", "/").split("/")
         if len(parts) != 3:
             raise ValueError("BILL_ID must be in format '118/hr/1234' or '118-hr-1234'")
@@ -233,7 +231,13 @@ def main():
         except Exception:
             subjects = {}
 
-        # Save first bill's raw responses for debugging
+        try:
+            bill_text = client.get_bill_text(congress, bill_type, bill_number)
+            if bill_text:
+                print(f"  Bill text fetched: {len(bill_text)} chars")
+        except Exception:
+            bill_text = ""
+
         if i == 0:
             with open("sample_congress_bill.json", "w", encoding="utf-8") as f:
                 json.dump(bill_detail, f, indent=2)
@@ -245,6 +249,7 @@ def main():
             summaries,
             actions=actions,
             subjects=subjects,
+            bill_text=bill_text,
             state_code=settings["STATE_CODE"],
         )
 
@@ -287,11 +292,9 @@ def main():
             "No documents built for indexing. Check extraction/chunking outputs."
         )
 
-    # 6) Create index and bulk index documents
     store.create_index_if_missing(vector_dim)
     store.index_documents_bulk(all_docs)
 
-    # 7) Print summary
     print("\nDONE ✅")
     print("Backend:", settings["SEARCH_BACKEND"])
     print("Index:", settings["INDEX_NAME"])
@@ -299,7 +302,6 @@ def main():
     print("Bills processed:", len(bills_to_ingest))
     print("State:", settings["STATE_CODE"])
     print("Congress:", settings["CONGRESS_NUMBER"])
-    print("Saved:")
 
 
 if __name__ == "__main__":

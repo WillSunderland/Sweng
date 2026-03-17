@@ -28,15 +28,6 @@ class CongressClient:
         self.session = requests.Session()
 
     def _get(self, endpoint, params=None):
-        """
-        Make a GET request to the Congress.gov API.
-
-        Handles:
-          - API key injection
-          - JSON format
-          - Basic rate-limit safety (small sleep between calls)
-          - Error handling
-        """
         if params is None:
             params = {}
 
@@ -45,32 +36,20 @@ class CongressClient:
 
         url = f"{self.BASE_URL}{endpoint}"
 
-        # Small delay to be respectful of rate limits (5000/hr = ~1.4/sec)
         time.sleep(0.5)
 
         resp = self.session.get(url, params=params, timeout=30)
         resp.raise_for_status()
         return resp.json()
 
-    # ------------------------------------------------------------------
-    # 1) Get members from a specific state
-    # ------------------------------------------------------------------
     def get_state_members(self, state_code="TX", congress=118, limit=250):
-        """
-        Fetch congress members for a given state and congress.
-
-        Endpoint: GET /v3/member/congress/{congress}/{stateCode}
-        """
         members = []
         offset = 0
 
         while True:
             data = self._get(
                 f"/member/congress/{congress}/{state_code}",
-                params={
-                    "limit": limit,
-                    "offset": offset,
-                },
+                params={"limit": limit, "offset": offset},
             )
 
             batch = data.get("members", [])
@@ -87,24 +66,7 @@ class CongressClient:
 
         return members
 
-    # ------------------------------------------------------------------
-    # 2) Get bills sponsored by a specific member
-    # ------------------------------------------------------------------
     def get_member_bills(self, bioguide_id, limit=50):
-        """
-        Fetch bills sponsored by a specific member.
-
-        Endpoint: /v3/member/{bioguideId}/sponsored-legislation
-
-        Returns list of bill summary dicts containing:
-          - congress
-          - type (HR, S, HJRES, etc.)
-          - number
-          - title
-          - latestAction
-          - policyArea
-          - url (API url for detail)
-        """
         bills = []
         offset = 0
 
@@ -128,73 +90,15 @@ class CongressClient:
 
         return bills
 
-    # ------------------------------------------------------------------
-    # 3) Get full bill detail
-    # ------------------------------------------------------------------
     def get_bill_detail(self, congress, bill_type, bill_number):
-        """
-        Fetch detailed info for a specific bill.
-
-        Endpoint: /v3/bill/{congress}/{billType}/{billNumber}
-
-        Example: /v3/bill/118/hr/1234
-
-        Returns dict with keys like:
-          - title
-          - number
-          - type
-          - congress
-          - originChamber
-          - policyArea
-          - subjects
-          - latestAction
-          - sponsors
-          - summaries (URL to summaries endpoint)
-        """
         data = self._get(f"/bill/{congress}/{bill_type}/{bill_number}")
         return data.get("bill", {})
 
-    # ------------------------------------------------------------------
-    # 4) Get bill summaries (CRS summary text)
-    # ------------------------------------------------------------------
     def get_bill_summaries(self, congress, bill_type, bill_number):
-        """
-        Fetch CRS summaries for a specific bill.
-
-        Endpoint: /v3/bill/{congress}/{billType}/{billNumber}/summaries
-
-        Returns list of summary dicts, each containing:
-          - text (HTML-formatted summary text)
-          - actionDate
-          - actionDesc
-          - versionCode
-          - updateDate
-
-        The 'text' field contains the actual searchable content.
-        Note: text may contain HTML tags — we strip them during extraction.
-        """
         data = self._get(f"/bill/{congress}/{bill_type}/{bill_number}/summaries")
         return data.get("summaries", [])
 
-    # ------------------------------------------------------------------
-    # 5) Search bills by keyword (alternative discovery method)
-    # ------------------------------------------------------------------
     def search_bills(self, congress=None, bill_type=None, limit=20, offset=0):
-        """
-        List bills, optionally filtered by congress and type.
-
-        Endpoint: /v3/bill
-        Or:       /v3/bill/{congress}
-        Or:       /v3/bill/{congress}/{billType}
-
-        NOTE: The Congress.gov API does NOT have a keyword search endpoint
-        for bills. To find bills by topic, you need to either:
-          a) Browse by congress/type and filter client-side
-          b) Use member-sponsored-legislation approach
-          c) Use the /v3/summaries endpoint for keyword-based discovery
-
-        This method returns bills at the list level for pagination.
-        """
         if congress and bill_type:
             endpoint = f"/bill/{congress}/{bill_type}"
         elif congress:
@@ -205,33 +109,41 @@ class CongressClient:
         data = self._get(endpoint, params={"limit": limit, "offset": offset})
         return data.get("bills", [])
 
-    # ------------------------------------------------------------------
-    # 6) Get bill subjects
-    # ------------------------------------------------------------------
     def get_bill_subjects(self, congress, bill_type, bill_number):
-        """
-        Fetch legislative subject terms for a bill.
-
-        Endpoint: /v3/bill/{congress}/{billType}/{billNumber}/subjects
-
-        Returns dict with:
-          - legislativeSubjects: list of {name: "..."}
-          - policyArea: {name: "..."}
-        """
         data = self._get(f"/bill/{congress}/{bill_type}/{bill_number}/subjects")
         return data.get("subjects", {})
 
-    # ------------------------------------------------------------------
-    # 7) Get bill actions (legislative history)
-    # ------------------------------------------------------------------
     def get_bill_actions(self, congress, bill_type, bill_number, limit=50):
-        """
-        Fetch actions/history for a specific bill.
-
-        Endpoint: /v3/bill/{congress}/{billType}/{billNumber}/actions
-        """
         data = self._get(
             f"/bill/{congress}/{bill_type}/{bill_number}/actions",
             params={"limit": limit},
         )
         return data.get("actions", [])
+
+    def get_bill_text(self, congress, bill_type, bill_number):
+        """
+        Fetch the plain text of a bill by finding its latest text version URL.
+
+        Endpoint: /v3/bill/{congress}/{billType}/{billNumber}/text
+
+        Returns the plain text string, or "" if unavailable.
+        """
+        try:
+            data = self._get(f"/bill/{congress}/{bill_type}/{bill_number}/text")
+            text_versions = data.get("textVersions", [])
+            if not text_versions:
+                return ""
+
+            # Pick the latest version — they come sorted newest first
+            for version in text_versions:
+                formats = version.get("formats", [])
+                for fmt in formats:
+                    if fmt.get("type", "").lower() == "formatted text":
+                        url = fmt.get("url", "")
+                        if url:
+                            resp = self.session.get(url, timeout=30)
+                            resp.raise_for_status()
+                            return resp.text[:8000]  # cap at 8000 chars
+            return ""
+        except Exception:
+            return ""
