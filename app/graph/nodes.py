@@ -52,6 +52,63 @@ def _build_context_summary(hits: list[dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
+def _text_similarity(text1: str, text2: str) -> float:
+    """Jaccard similarity between two texts based on word overlap."""
+    words1 = set(text1.lower().split())
+    words2 = set(text2.lower().split())
+    if not words1 or not words2:
+        return 0.0
+    return len(words1 & words2) / len(words1 | words2)
+
+
+def _mmr_rerank(hits: list[dict[str, Any]], top_k: int, lambda_param: float = 0.7) -> list[dict[str, Any]]:
+    """
+    Maximum Marginal Relevance re-ranking using text similarity.
+
+    Balances relevance (BM25 score) with diversity (low overlap between selected chunks).
+    Chunks from the same bill that say the same thing get penalised.
+
+    lambda_param: 1.0 = pure relevance, 0.0 = pure diversity. 0.7 is a good default.
+    """
+    if len(hits) <= top_k:
+        return hits
+
+    top_score = hits[0].get("_score", 1.0) or 1.0
+    selected: list[dict[str, Any]] = []
+    remaining = list(hits)
+
+    for _ in range(top_k):
+        if not remaining:
+            break
+
+        if not selected:
+            selected.append(remaining.pop(0))
+            continue
+
+        best_idx = None
+        best_score = -float("inf")
+
+        for i, candidate in enumerate(remaining):
+            candidate_text = candidate.get("_source", {}).get("chunk_text", "")
+            rel = (candidate.get("_score", 0.0) or 0.0) / top_score
+
+            max_sim = max(
+                _text_similarity(candidate_text, s.get("_source", {}).get("chunk_text", ""))
+                for s in selected
+            )
+
+            mmr_score = lambda_param * rel - (1 - lambda_param) * max_sim
+
+            if mmr_score > best_score:
+                best_score = mmr_score
+                best_idx = i
+
+        if best_idx is not None:
+            selected.append(remaining.pop(best_idx))
+
+    return selected
+
+
 def inputNode(state: GraphState) -> dict[str, Any]:
     query = state.get("query", "").strip()
     chat_history = list(state.get("chat_history", []))
@@ -103,8 +160,11 @@ def makeSearchNode(client: OpenSearch, index: str):
         search_iteration = int(state.get("search_iteration", 0)) + 1
 
         try:
+            # Fetch more candidates than needed so MMR has room to diversify
+            fetch_k = max(settings.search_top_k * 4, 20)
+
             body = {
-                "size": settings.search_top_k,
+                "size": fetch_k,
                 "query": {
                     "multi_match": {
                         "query": query,
@@ -114,7 +174,11 @@ def makeSearchNode(client: OpenSearch, index: str):
                 },
             }
             raw = client.search(index=index, body=body)
-            hits = raw.get("hits", {}).get("hits", [])
+            raw_hits = raw.get("hits", {}).get("hits", [])
+
+            # MMR: pick diverse top_k from the larger candidate set
+            hits = _mmr_rerank(raw_hits, top_k=settings.search_top_k)
+
             accumulated = _merge_hits(list(state.get("accumulatedSources", [])), hits)
             unique_titles = len({h.get("_source", {}).get("title", "") for h in accumulated if h.get("_source", {}).get("title")})
 
@@ -129,7 +193,7 @@ def makeSearchNode(client: OpenSearch, index: str):
                 "reasoning_steps": _reasoning_step(
                     state,
                     "search",
-                    f"Search iteration {search_iteration} returned {len(hits)} hits across {unique_titles} unique titles.",
+                    f"Search iteration {search_iteration} retrieved {len(raw_hits)} candidates, MMR selected {len(hits)} diverse results across {unique_titles} unique titles.",
                 ),
             }
         except Exception as exc:
