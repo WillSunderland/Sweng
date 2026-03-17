@@ -21,13 +21,13 @@ try:
         DEFAULT_CARBON_G,
     )
 except ModuleNotFoundError:
-    from api.schemas.runSchemas import CreateRunRequestSerializer
-    from api.errors.errorMapping import (
+    from orchestrator.api.schemas.runSchemas import CreateRunRequestSerializer
+    from orchestrator.api.errors.errorMapping import (
         invalidRequestError,
         runNotFoundError,
         sourceNotFoundError,
     )
-    from api.constants.runConstants import (
+    from orchestrator.api.constants.runConstants import (
         RUN_STATUS_RUNNING,
         RUN_STATUS_COMPLETED,
         DEFAULT_TRUST_SCORE,

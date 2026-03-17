@@ -1,5 +1,5 @@
 import logging
-from schemas import DocumentHits, NLQueryRequest, NLQueryResult
+from nl_query.schemas import DocumentHits, NLQueryRequest, NLQueryResult
 
 logger = logging.getLogger("nl-query-service")
 

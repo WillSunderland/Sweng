@@ -1,0 +1,128 @@
+import asyncio
+import json
+import logging
+import os
+import sys
+
+from django.http import StreamingHttpResponse
+
+logger = logging.getLogger(__name__)
+
+# Node name → SSE state event mapping
+NODE_STATE_MAP = {
+    "inputNode": "thinking",
+    "queryRewriteNode": "thinking",
+    "planNode": "thinking",
+    "prefetchDecisionNode": "thinking",
+    "searchNode": "searching",
+    "readNode": "reading",
+    "routerNode": "thinking",
+    "nvidiaLlmNode": "answering",
+    "hfLlmNode": "answering",
+    "llmOutputNode": "answering",
+}
+
+
+def _get_graph():
+    """Lazily import the compiled graph from the FastAPI app context."""
+    try:
+        from app.main import _compiledGraph
+
+        return _compiledGraph
+    except Exception as e:
+        logger.error("Failed to import compiled graph: %s", e)
+        return None
+
+
+def _sse(event: str, data: dict) -> str:
+    return f"event: {event}\ndata: {json.dumps(data)}\n\n"
+
+
+def _stream_events(query: str):
+    """
+    Synchronous generator that runs the async LangGraph pipeline
+    and yields SSE-formatted strings.
+    """
+    import asyncio
+
+    async def _run():
+        events = []
+
+        graph = _get_graph()
+        if graph is None:
+            yield _sse("error", {"message": "Graph not initialised"})
+            yield _sse("done", {"status": "error"})
+            return
+
+        initial_state = {
+            "query": query,
+            "chat_history": [],
+            "max_reasoning_steps": 3,
+            "processedQuery": "",
+            "searchResults": [],
+            "accumulatedSources": [],
+            "searchQueries": [],
+            "readNotes": [],
+            "plan": [],
+            "reasoning_steps": [],
+            "response": {},
+            "error": None,
+        }
+
+        emitted_states = set()
+
+        # Stream node-level events from LangGraph
+        async for event in graph.astream_events(initial_state, version="v2"):
+            kind = event.get("event")
+            node = event.get("name", "")
+
+            if kind == "on_chain_start" and node in NODE_STATE_MAP:
+                state_label = NODE_STATE_MAP[node]
+                if state_label not in emitted_states:
+                    emitted_states.add(state_label)
+                    yield _sse("state", {"state": state_label})
+
+            elif kind == "on_chain_end" and node == "llmOutputNode":
+                # Final answer is ready — stream it token by token
+                output = event.get("data", {}).get("output", {})
+                response = output.get("response", {})
+                answer = response.get("answer", "")
+
+                if answer:
+                    for token in answer.split():
+                        yield _sse("token", {"token": token})
+                        await asyncio.sleep(0.02)
+
+        yield _sse("done", {"status": "complete"})
+
+    # Run the async generator in a new event loop and collect yields
+    async def _collect():
+        results = []
+        async for chunk in _run():
+            results.append(chunk)
+        return results
+
+    loop = asyncio.new_event_loop()
+    try:
+        chunks = loop.run_until_complete(_collect())
+        for chunk in chunks:
+            yield chunk
+    finally:
+        loop.close()
+
+
+def streamResponse(request):
+    query = request.GET.get("query", "")
+    if not query:
+
+        def empty():
+            yield f"event: error\ndata: {json.dumps({'message': 'query parameter is required'})}\n\n"
+
+        return StreamingHttpResponse(empty(), content_type="text/event-stream")
+
+    response = StreamingHttpResponse(
+        _stream_events(query), content_type="text/event-stream"
+    )
+    response["Cache-Control"] = "no-cache"
+    response["X-Accel-Buffering"] = "no"
+    return response

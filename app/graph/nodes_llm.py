@@ -21,7 +21,9 @@ settings = getSettings()
 JSON_BLOCK_RE = re.compile(r"(\{.*\}|\[.*\])", re.DOTALL)
 
 
-def _reasoning_step(state: GraphState, node: str, detail: str, status: str = "completed") -> list[dict[str, Any]]:
+def _reasoning_step(
+    state: GraphState, node: str, detail: str, status: str = "completed"
+) -> list[dict[str, Any]]:
     steps = list(state.get("reasoning_steps", []))
     steps.append({"node": node, "status": status, "detail": detail})
     return steps
@@ -106,7 +108,9 @@ async def queryRewriteNode(state: GraphState) -> dict[str, Any]:
             ),
         }
 
-    fallback_query = f"{query} (conversation context: {_chat_excerpt(chat_history[-2:])})"
+    fallback_query = (
+        f"{query} (conversation context: {_chat_excerpt(chat_history[-2:])})"
+    )
     payload = await _generate_control_json(
         "Rewrite follow-up legislative research questions into standalone search-ready queries. Respond with JSON only.",
         (
@@ -121,7 +125,9 @@ async def queryRewriteNode(state: GraphState) -> dict[str, Any]:
     )
 
     rewritten_query = str(payload.get("rewritten_query") or query).strip()
-    reason = str(payload.get("reason") or "Query rewritten for follow-up continuity.").strip()
+    reason = str(
+        payload.get("reason") or "Query rewritten for follow-up continuity."
+    ).strip()
 
     return {
         "processedQuery": rewritten_query,
@@ -137,12 +143,23 @@ async def queryRewriteNode(state: GraphState) -> dict[str, Any]:
 
 
 async def planNode(state: GraphState) -> dict[str, Any]:
-    query = state.get("standaloneQuery") or state.get("processedQuery") or state.get("query", "")
-    complex_query = any(token in query.lower() for token in ["compare", "difference", "impact", "analyze", "steps", "timeline"])
+    query = (
+        state.get("standaloneQuery")
+        or state.get("processedQuery")
+        or state.get("query", "")
+    )
+    complex_query = any(
+        token in query.lower()
+        for token in ["compare", "difference", "impact", "analyze", "steps", "timeline"]
+    )
     fallback_plan = [
         "Clarify the question using prior chat context if needed.",
         "Decide whether chat context alone is enough or whether retrieval is required.",
-        "Retrieve legislative passages and synthesize a cited answer." if complex_query else "Answer concisely with the available grounded context.",
+        (
+            "Retrieve legislative passages and synthesize a cited answer."
+            if complex_query
+            else "Answer concisely with the available grounded context."
+        ),
     ]
 
     payload = await _generate_control_json(
@@ -237,7 +254,11 @@ async def readNode(state: GraphState) -> dict[str, Any]:
 
     titles = [hit.get("_source", {}).get("title", "Unknown Source") for hit in hits[:3]]
     unique_titles = {title for title in titles if title}
-    needs_more_context = "compare" in query.lower() and len(unique_titles) < 2 and search_iteration < max_steps
+    needs_more_context = (
+        "compare" in query.lower()
+        and len(unique_titles) < 2
+        and search_iteration < max_steps
+    )
     follow_up_query = f"{query} comparison details" if needs_more_context else None
 
     payload = await _generate_control_json(
@@ -260,7 +281,9 @@ async def readNode(state: GraphState) -> dict[str, Any]:
     )
 
     enough_context = bool(payload.get("enough_context", True))
-    summary = str(payload.get("summary") or f"Reviewed {len(hits)} retrieved documents.").strip()
+    summary = str(
+        payload.get("summary") or f"Reviewed {len(hits)} retrieved documents."
+    ).strip()
     if search_iteration >= max_steps:
         enough_context = True
 
@@ -280,7 +303,11 @@ async def readNode(state: GraphState) -> dict[str, Any]:
 
 
 def prefetchRoute(state: GraphState) -> str:
-    return "search" if state.get("prefetchDecision", "search") == "search" else "context_only"
+    return (
+        "search"
+        if state.get("prefetchDecision", "search") == "search"
+        else "context_only"
+    )
 
 
 def readLoopRoute(state: GraphState) -> str:
@@ -334,8 +361,11 @@ def routerNode(state: GraphState) -> dict[str, Any]:
 async def nvidiaLlmNode(state: GraphState) -> dict[str, Any]:
     """Calls Nvidia LLM, falls back to HuggingFace on failure."""
     query = state.get("standaloneQuery") or state.get("query", "")
-    documents = [hit.get("_source", {}) for hit in (state.get("accumulatedSources") or state.get("searchResults", []))]
-    
+    documents = [
+        hit.get("_source", {})
+        for hit in (state.get("accumulatedSources") or state.get("searchResults", []))
+    ]
+
     user_prompt = build_rag_user_prompt(
         query,
         documents,
@@ -365,8 +395,11 @@ async def nvidiaLlmNode(state: GraphState) -> dict[str, Any]:
 async def hfLlmNode(state: GraphState) -> dict[str, Any]:
     """Calls local HuggingFace LLM."""
     query = state.get("standaloneQuery") or state.get("query", "")
-    documents = [hit.get("_source", {}) for hit in (state.get("accumulatedSources") or state.get("searchResults", []))]
-    
+    documents = [
+        hit.get("_source", {})
+        for hit in (state.get("accumulatedSources") or state.get("searchResults", []))
+    ]
+
     user_prompt = build_rag_user_prompt(
         query,
         documents,
