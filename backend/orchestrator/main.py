@@ -19,6 +19,7 @@ DEFAULT_CARBON_G = 0.3
 
 RUN_STORE: dict[str, dict] = {}
 SOURCE_STORE: dict[str, dict] = {}
+SESSION_STORE: dict[str, list[dict]] = {}  # session_id -> list of {role, content} turns
 
 app = shared_app
 
@@ -27,6 +28,7 @@ class CreateRunRequest(BaseModel):
     query: str
     chat_history: list[ChatMessage] = Field(default_factory=list)
     max_reasoning_steps: int | None = None
+    session_id: str | None = None  # if provided, server loads + saves history automatically
 
 
 def get_iso_timestamp() -> str:
@@ -43,15 +45,36 @@ async def create_run(request: CreateRunRequest):
         "status": RUN_STATUS_RUNNING,
     }
 
+    # If session_id provided, load stored history and ignore any client-sent chat_history.
+    # If no session_id, use whatever chat_history the client sent (stateless mode).
+    if request.session_id:
+        session_history = SESSION_STORE.get(request.session_id, [])
+        history_for_query = [ChatMessage(**turn) for turn in session_history]
+    else:
+        history_for_query = request.chat_history
+
     result = await query_endpoint(
         QueryRequest(
             query=request.query,
-            chat_history=request.chat_history,
+            chat_history=history_for_query,
             max_reasoning_steps=request.max_reasoning_steps,
         )
     )
     RUN_STORE[run_id]["result"] = result.model_dump()
     RUN_STORE[run_id]["status"] = RUN_STATUS_COMPLETED
+
+    # Save this turn to session history so the next request has context.
+    if request.session_id:
+        if request.session_id not in SESSION_STORE:
+            SESSION_STORE[request.session_id] = []
+        SESSION_STORE[request.session_id].append(
+            {"role": "user", "content": request.query}
+        )
+        SESSION_STORE[request.session_id].append(
+            {"role": "assistant", "content": result.answer}
+        )
+        # Cap at 20 turns (40 messages) to avoid unbounded growth
+        SESSION_STORE[request.session_id] = SESSION_STORE[request.session_id][-40:]
 
     for idx, source in enumerate(result.sources, start=1):
         source_id = f"{run_id}_src_{idx:03d}"
@@ -136,3 +159,21 @@ async def get_source(source_id: str):
     if not source:
         raise HTTPException(status_code=404, detail=f"Source {source_id} not found")
     return source
+
+
+@app.get("/api/sessions/{session_id}")
+async def get_session(session_id: str):
+    """Returns the stored chat history for a session."""
+    history = SESSION_STORE.get(session_id)
+    if history is None:
+        raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
+    return {"session_id": session_id, "history": history, "turn_count": len(history) // 2}
+
+
+@app.delete("/api/sessions/{session_id}")
+async def clear_session(session_id: str):
+    """Clears the chat history for a session."""
+    if session_id not in SESSION_STORE:
+        raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
+    SESSION_STORE.pop(session_id)
+    return {"session_id": session_id, "cleared": True}
