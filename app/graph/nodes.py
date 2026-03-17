@@ -24,13 +24,17 @@ def _get_cross_encoder() -> CrossEncoder:
     return _cross_encoder_model
 
 
-def _reasoning_step(state: GraphState, node: str, detail: str, status: str = "completed") -> list[dict[str, Any]]:
+def _reasoning_step(
+    state: GraphState, node: str, detail: str, status: str = "completed"
+) -> list[dict[str, Any]]:
     steps = list(state.get("reasoning_steps", []))
     steps.append({"node": node, "status": status, "detail": detail})
     return steps
 
 
-def _merge_hits(existing: list[dict[str, Any]], new_hits: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _merge_hits(
+    existing: list[dict[str, Any]], new_hits: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
     merged: list[dict[str, Any]] = []
     seen: set[str] = set()
 
@@ -182,7 +186,12 @@ def makeSearchNode(client: OpenSearch, index: str):
         if not query:
             return {
                 "error": "Search query is empty.",
-                "reasoning_steps": _reasoning_step(state, "search", "Search skipped because the query was empty.", "failed"),
+                "reasoning_steps": _reasoning_step(
+                    state,
+                    "search",
+                    "Search skipped because the query was empty.",
+                    "failed",
+                ),
             }
 
         search_iteration = int(state.get("search_iteration", 0)) + 1
@@ -195,7 +204,12 @@ def makeSearchNode(client: OpenSearch, index: str):
                 "query": {
                     "multi_match": {
                         "query": query,
-                        "fields": ["title^3", "chunk_text^5", "policy_area^2", "latest_action"],
+                        "fields": [
+                            "title^3",
+                            "chunk_text^5",
+                            "policy_area^2",
+                            "latest_action",
+                        ],
                         "type": "best_fields",
                     }
                 },
@@ -211,7 +225,13 @@ def makeSearchNode(client: OpenSearch, index: str):
             hits = _cross_encoder_rerank(query, mmr_hits, top_k=settings.search_top_k)
 
             accumulated = _merge_hits(list(state.get("accumulatedSources", [])), hits)
-            unique_titles = len({h.get("_source", {}).get("title", "") for h in accumulated if h.get("_source", {}).get("title")})
+            unique_titles = len(
+                {
+                    h.get("_source", {}).get("title", "")
+                    for h in accumulated
+                    if h.get("_source", {}).get("title")
+                }
+            )
 
             return {
                 "search_iteration": search_iteration,

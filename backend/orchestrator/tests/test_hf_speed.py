@@ -4,7 +4,7 @@ import time
 try:
     from orchestrator.services.hf_client import HuggingFaceLLMClient
 except ModuleNotFoundError:
-    from services.hf_client import HuggingFaceLLMClient
+    from orchestrator.services.hf_client import HuggingFaceLLMClient
 
 
 async def main():
