@@ -70,3 +70,4 @@ We enforce coding standards using `pre-commit`.
 - **Sprint 1 (Weeks 3-6):** MVP with Containerized MCP Server & Basic Search.
 - **Sprint 2 (Weeks 7-10):** RAG Pipeline & LangGraph Integration.
 - **Sprint 3 (Weeks 11-13):** Final UI & "Green" Computing Indicators.
+x
