@@ -9,6 +9,8 @@ stages:
 github-sync:
   stage: sync
   image: alpine:3.19
+  tags:
+    - docker
   variables:
     GIT_DEPTH: "0"
   rules:
@@ -31,6 +33,8 @@ variables:
 backend-lint:
   stage: lint
   image: python:3.11-slim
+  tags:
+    - docker
   cache:
     key: backend-lint
     paths:
@@ -43,6 +47,8 @@ backend-lint:
 frontend-lint:
   stage: lint
   image: node:20-alpine
+  tags:
+    - docker
   cache:
     key: frontend-deps
     paths:
@@ -61,6 +67,8 @@ frontend-lint:
 backend-test:
   stage: test
   image: python:3.11-slim
+  tags:
+    - docker
   cache:
     key: backend-deps
     paths:
@@ -92,6 +100,8 @@ backend-test:
 frontend-test:
   stage: test
   image: node:20-alpine
+  tags:
+    - docker
   cache:
     key: frontend-deps
     paths:
@@ -115,6 +125,8 @@ frontend-test:
 backend-build:
   stage: build
   image: python:3.11-slim
+  tags:
+    - docker
   cache:
     key: backend-deps
     paths:
@@ -128,6 +140,8 @@ backend-build:
 backend-unit-tests:
   stage: test
   image: python:3.11-slim
+  tags:
+    - docker
   variables:
     PYTHONPATH: "."
   cache:
@@ -143,6 +157,8 @@ backend-unit-tests:
 backend-integration-tests:
   stage: test
   image: python:3.11-slim
+  tags:
+    - docker  
   variables:
     PYTHONPATH: "."
   cache:
@@ -169,6 +185,8 @@ backend-integration-tests:
 frontend-build:
   stage: build
   image: node:20-alpine
+  tags:
+    - docker
   needs:
     - frontend-lint
   cache:
