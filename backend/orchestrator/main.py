@@ -1,15 +1,23 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-from typing import List, Dict, Any
+from typing import List, Dict, Any, AsyncGenerator
+import asyncio
+import json
+import random
+import re
+import time
 import uuid
 from datetime import datetime, timezone
-import re
 from graph import app as graph_app
 from semantic_retrieval import SemanticRetriever
 from url_utils import resolve_source_url
 from cache import QueryCache
-import re
+from services.carbon_estimator import estimate_carbon_tons, tons_to_grams
+import logging
+
+logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Orchestrator API")
 
@@ -59,6 +67,132 @@ def get_iso_timestamp():
     return datetime.now(timezone.utc).isoformat()
 
 
+def _store_sources(run_id: str, result: dict) -> None:
+    # Build source store entries for this run
+    # Include every field the frontend might use to resolve a URL or build a citation
+    documents = result.get("documents", []) or []
+    source_ids = []
+    for doc in documents:
+        source_id = doc.get("doc_id") or f"src_{uuid.uuid4().hex[:8]}"
+        source_ids.append(source_id)
+
+        # Try to extract congress number from bill_id
+        bill_id = doc.get("bill_id") or doc.get("id") or source_id
+        congress_match = re.match(r"^(\d+)-", bill_id or "")
+        congress = congress_match.group(1) if congress_match else None
+
+        source_entry = {
+            "sourceId": source_id,
+            "title": doc.get("title", "Unknown Source"),
+            "fullText": doc.get("chunk_text", ""),
+            "billId": bill_id,
+            "state": doc.get("state"),
+            "billType": doc.get("bill_type"),
+            "billNumber": doc.get("bill_number"),
+            "congress": congress,
+            "session": doc.get("session"),
+            "policyArea": doc.get("policy_area"),
+            "latestAction": doc.get("latest_action"),
+            "chunkId": doc.get("chunk_id"),
+        }
+        # Resolve and store URL immediately
+        source_entry["url"] = resolve_source_url(source_entry)
+        SOURCE_STORE[source_id] = source_entry
+
+    RUN_STORE[run_id]["sourceIds"] = source_ids
+    # Also store the raw documents list for the run response
+    RUN_STORE[run_id]["documents"] = documents
+
+
+async def _generate_run_events(query: str) -> AsyncGenerator[str, None]:
+    
+   # Streams SSE events to the frontend as the LangGraph pipeline runs.
+
+    run_id = f"run_{uuid.uuid4().hex[:12]}"
+    start = time.monotonic()
+
+    # Store initial state (mirrors what create_run does for polling compatibility)
+    RUN_STORE[run_id] = {
+        "query": query,
+        "createdAt": get_iso_timestamp(),
+        "status": RUN_STATUS_RUNNING,
+    }
+
+    # Small helper to build a consistently shaped SSE frame
+    def sse(event_type: str, label: str, **kwargs) -> str:
+        elapsed = round(time.monotonic() - start, 2)
+        payload = json.dumps({"event": event_type, "label": label, "elapsed": elapsed, **kwargs})
+        return f"data: {payload}\n\n"
+
+    try:
+        yield sse("init", "Starting analysis...", runId=run_id)
+
+        # Check cache first, no point re-running the full pipeline
+        cached = query_cache.get(query)
+        if cached:
+            yield sse("thinking", "Checking cache...")
+            await asyncio.sleep(0.1)
+            RUN_STORE[run_id]["result"] = cached
+            RUN_STORE[run_id]["status"] = RUN_STATUS_COMPLETED
+            _store_sources(run_id, cached)
+            carbon_g = round(tons_to_grams(estimate_carbon_tons(
+                cached.get("model_used"), cached.get("provider_used")
+            )), 4)
+            yield sse("complete", "Analysis complete", runId=run_id,
+                      tokenCount=cached.get("token_count", 0), carbonG=carbon_g)
+            return
+
+        initial_state = {
+            "query": query,
+            "processed_query": "",
+            "documents": [],
+            "answer": "",
+            "model_used": "",
+            "provider_used": "",
+            "token_count": 0,
+            "error": "",
+        }
+
+        yield sse("thinking", "Thinking...")
+        await asyncio.sleep(random.uniform(5.0, 12.0))
+
+        result: dict = {}
+        async for chunk in graph_app.astream(initial_state):
+            node_name = next(iter(chunk))
+            node_state = chunk[node_name]
+
+            if node_name == "rewrite":
+                yield sse("searching", "Searching documents...")
+                await asyncio.sleep(2.0)
+
+            elif node_name == "retrieve":
+                doc_count = len(node_state.get("documents") or [])
+                label = f"Reading {doc_count} source{'s' if doc_count != 1 else ''}..."
+                yield sse("reading", label, docCount=doc_count)
+                result.update(node_state)
+                await asyncio.sleep(2.0)
+
+            elif node_name == "generate":
+                yield sse("generating", "Generating answer...")
+                await asyncio.sleep(2.5)
+                result.update(node_state)
+
+        query_cache.set(query, result)
+        RUN_STORE[run_id]["result"] = result
+        RUN_STORE[run_id]["status"] = RUN_STATUS_COMPLETED
+        _store_sources(run_id, result)
+
+        carbon_g = round(tons_to_grams(estimate_carbon_tons(
+            result.get("model_used"), result.get("provider_used")
+        )), 4)
+        yield sse("complete", "Analysis complete", runId=run_id,
+                  tokenCount=result.get("token_count", 0), carbonG=carbon_g)
+
+    except Exception as e:
+        logger.error("Stream error for run %s: %s", run_id, e)
+        yield sse("error", str(e), runId=run_id)
+
+
 @app.post("/api/runs", response_model=RunResponse, status_code=201)
 async def create_run(request: CreateRunRequest):
     run_id = f"run_{uuid.uuid4().hex[:12]}"
@@ -95,43 +229,19 @@ async def create_run(request: CreateRunRequest):
     # In a real app we'd update the run result here
     RUN_STORE[run_id]["result"] = result
     RUN_STORE[run_id]["status"] = RUN_STATUS_COMPLETED
-
-    # Build source store entries for this run
-    # Include every field the frontend might use to resolve a URL or build a citation
-    documents = result.get("documents", []) or []
-    source_ids = []
-    for doc in documents:
-        source_id = doc.get("doc_id") or f"src_{uuid.uuid4().hex[:8]}"
-        source_ids.append(source_id)
-
-        # Try to extract congress number from bill_id
-        bill_id = doc.get("bill_id") or doc.get("id") or source_id
-        congress_match = re.match(r"^(\d+)-", bill_id or "")
-        congress = congress_match.group(1) if congress_match else None
-
-        source_entry = {
-            "sourceId": source_id,
-            "title": doc.get("title", "Unknown Source"),
-            "fullText": doc.get("chunk_text", ""),
-            "billId": bill_id,
-            "state": doc.get("state"),
-            "billType": doc.get("bill_type"),
-            "billNumber": doc.get("bill_number"),
-            "congress": congress,
-            "session": doc.get("session"),
-            "policyArea": doc.get("policy_area"),
-            "latestAction": doc.get("latest_action"),
-            "chunkId": doc.get("chunk_id"),
-        }
-        # Resolve and store URL immediately
-        source_entry["url"] = resolve_source_url(source_entry)
-        SOURCE_STORE[source_id] = source_entry
-
-    RUN_STORE[run_id]["sourceIds"] = source_ids
-    # Also store the raw documents list for the run response
-    RUN_STORE[run_id]["documents"] = documents
+    _store_sources(run_id, result)
 
     return {"runId": run_id, "status": RUN_STATUS_RUNNING, "createdAt": created_at}
+
+
+@app.get("/api/runs/stream")
+async def stream_run(query: str):
+    """SSE endpoint — streams agent thought events while processing a query."""
+    return StreamingResponse(
+        _generate_run_events(query),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @app.get("/api/runs", response_model=RunList)
