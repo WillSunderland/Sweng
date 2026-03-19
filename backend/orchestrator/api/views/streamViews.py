@@ -1,8 +1,5 @@
-import asyncio
 import json
 import logging
-import os
-import sys
 
 from django.http import StreamingHttpResponse
 
@@ -46,7 +43,6 @@ def _stream_events(query: str):
     import asyncio
 
     async def _run():
-        events = []
 
         graph = _get_graph()
         if graph is None:
