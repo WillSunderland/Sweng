@@ -105,8 +105,8 @@ def _store_sources(run_id: str, result: dict) -> None:
 
 
 async def _generate_run_events(query: str) -> AsyncGenerator[str, None]:
-    
-   # Streams SSE events to the frontend as the LangGraph pipeline runs.
+
+    # Streams SSE events to the frontend as the LangGraph pipeline runs.
 
     run_id = f"run_{uuid.uuid4().hex[:12]}"
     start = time.monotonic()
@@ -121,7 +121,9 @@ async def _generate_run_events(query: str) -> AsyncGenerator[str, None]:
     # Small helper to build a consistently shaped SSE frame
     def sse(event_type: str, label: str, **kwargs) -> str:
         elapsed = round(time.monotonic() - start, 2)
-        payload = json.dumps({"event": event_type, "label": label, "elapsed": elapsed, **kwargs})
+        payload = json.dumps(
+            {"event": event_type, "label": label, "elapsed": elapsed, **kwargs}
+        )
         return f"data: {payload}\n\n"
 
     try:
@@ -135,11 +137,21 @@ async def _generate_run_events(query: str) -> AsyncGenerator[str, None]:
             RUN_STORE[run_id]["result"] = cached
             RUN_STORE[run_id]["status"] = RUN_STATUS_COMPLETED
             _store_sources(run_id, cached)
-            carbon_g = round(tons_to_grams(estimate_carbon_tons(
-                cached.get("model_used"), cached.get("provider_used")
-            )), 4)
-            yield sse("complete", "Analysis complete", runId=run_id,
-                      tokenCount=cached.get("token_count", 0), carbonG=carbon_g)
+            carbon_g = round(
+                tons_to_grams(
+                    estimate_carbon_tons(
+                        cached.get("model_used"), cached.get("provider_used")
+                    )
+                ),
+                4,
+            )
+            yield sse(
+                "complete",
+                "Analysis complete",
+                runId=run_id,
+                tokenCount=cached.get("token_count", 0),
+                carbonG=carbon_g,
+            )
             return
 
         initial_state = {
@@ -182,11 +194,21 @@ async def _generate_run_events(query: str) -> AsyncGenerator[str, None]:
         RUN_STORE[run_id]["status"] = RUN_STATUS_COMPLETED
         _store_sources(run_id, result)
 
-        carbon_g = round(tons_to_grams(estimate_carbon_tons(
-            result.get("model_used"), result.get("provider_used")
-        )), 4)
-        yield sse("complete", "Analysis complete", runId=run_id,
-                  tokenCount=result.get("token_count", 0), carbonG=carbon_g)
+        carbon_g = round(
+            tons_to_grams(
+                estimate_carbon_tons(
+                    result.get("model_used"), result.get("provider_used")
+                )
+            ),
+            4,
+        )
+        yield sse(
+            "complete",
+            "Analysis complete",
+            runId=run_id,
+            tokenCount=result.get("token_count", 0),
+            carbonG=carbon_g,
+        )
 
     except Exception as e:
         logger.error("Stream error for run %s: %s", run_id, e)
