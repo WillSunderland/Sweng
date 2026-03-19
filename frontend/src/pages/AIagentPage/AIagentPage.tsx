@@ -4,7 +4,7 @@ import propylonLogo from '../../assets/propylon_logo.svg';
 import './AIagentPage.css';
 import sunIcon from '../../assets/lighModeSun.png';
 import moonIcon from '../../assets/darkModeMoon.png';
-import { Brain, Search, BookOpen, CheckCircle2, Leaf, ShieldCheck, Paperclip, Cpu, Sparkles, AlertCircle } from 'lucide-react';
+import { Brain, Search, BookOpen, CheckCircle2, Leaf, Paperclip, Cpu, Sparkles, AlertCircle } from 'lucide-react';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -484,13 +484,6 @@ const STAGE_THOUGHTS: Record<AgentEventType, string[]> = {
   error:      ['Analysis failed.'],
 };
 
-// Maps each event type to an overall progress percentage
-const STAGE_PROGRESS: Record<AgentEventType, number> = {
-  init: 8, thinking: 25, searching: 50, reading: 70, generating: 88, complete: 100, error: 0,
-};
-
-const PROGRESS_STAGES: AgentEventType[] = ['thinking', 'searching', 'reading', 'generating', 'complete'];
-
 // Client-side live elapsed timer (ticks every 100 ms while active)
 function useLiveTimer(isActive: boolean): number {
   const [elapsed, setElapsed] = useState(0);
@@ -499,11 +492,9 @@ function useLiveTimer(isActive: boolean): number {
   useEffect(() => {
     if (!isActive) {
       startRef.current = null;
-      setElapsed(0);
       return;
     }
     startRef.current = Date.now();
-    setElapsed(0);
     const id = setInterval(() => {
       if (startRef.current !== null) {
         setElapsed((Date.now() - startRef.current) / 1000);
@@ -593,9 +584,8 @@ const CompletedThoughtCard: React.FC<{
 
 const AgentThinkingBlock: React.FC<{
   currentEvent: AgentEvent | null;
-  events: AgentEvent[];
   isStreaming: boolean;
-}> = ({ currentEvent, events, isStreaming }) => {
+}> = ({ currentEvent, isStreaming }) => {
   const [thoughtIdx, setThoughtIdx] = useState(0);
   const [thoughtKey, setThoughtKey] = useState(0);
   const liveElapsed = useLiveTimer(isStreaming);
@@ -609,8 +599,10 @@ const AgentThinkingBlock: React.FC<{
   useEffect(() => {
     const eventType = effectiveEvent.event;
     if (eventType === 'complete' || eventType === 'error') return;
-    setThoughtIdx(0);
-    setThoughtKey((k) => k + 1);
+    setTimeout(() => {
+      setThoughtIdx(0);
+      setThoughtKey((k) => k + 1);
+    }, 0);
     const thoughts = STAGE_THOUGHTS[eventType] ?? [];
     if (thoughts.length <= 1) return;
     const id = setInterval(() => {
@@ -907,8 +899,6 @@ const ReasoningPanel: React.FC<{
     },
   ];
 
-  const trustPct = 98.4;
-
   return (
     <div className="reasoning-panel">
 
@@ -925,7 +915,6 @@ const ReasoningPanel: React.FC<{
       {/* ── Step list ──────────────────────────────────────────────────── */}
       <div className="rpanel-steps">
         {steps.map((step, i) => {
-          const { Icon } = step;
           return (
             <div key={i} className={`rpanel-step status-${step.status}`}>
               <div className="rpanel-step-dot">
@@ -1373,7 +1362,6 @@ const AIagentPage: React.FC<{ darkMode?: boolean; toggleDarkMode?: () => void }>
                       {isStreaming || currentEvent ? (
                         <AgentThinkingBlock
                           currentEvent={currentEvent}
-                          events={events}
                           isStreaming={isStreaming}
                         />
                       ) : (
