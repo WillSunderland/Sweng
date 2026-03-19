@@ -1078,6 +1078,7 @@ const AIagentPage: React.FC<{ darkMode?: boolean; toggleDarkMode?: () => void }>
         );
       } catch {
         // Graceful fallback to standard polling if streaming is unavailable
+        resetStream();
         runId = await createRun(messageText);
       }
 
