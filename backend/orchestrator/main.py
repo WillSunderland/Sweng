@@ -20,24 +20,29 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
 # Models
 class CreateRunRequest(BaseModel):
     query: str
     chat_history: list = Field(default_factory=list)
     max_reasoning_steps: Optional[int] = None
 
+
 class RunResponse(BaseModel):
     runId: str
     status: str
     createdAt: str
+
 
 class RunItem(BaseModel):
     runId: str
     title: str
     updatedAt: str
 
+
 class RunList(BaseModel):
     items: List[RunItem]
+
 
 # Constants
 RUN_STATUS_RUNNING = "running"
@@ -147,19 +152,23 @@ async def list_runs(
         run_status = run.get("status", RUN_STATUS_COMPLETED)
         query_text = run.get("query", "Unknown")
 
-        items.append({
-            "runId": run_id,
-            "title": f"Analysis for: {query_text}",
-            "query": query_text,
-            "status": run_status,
-            "priority": _infer_priority(query_text),
-            "createdAt": run["createdAt"],
-            "updatedAt": run["createdAt"],
-            "carbonG": DEFAULT_CARBON_G,
-            "model_used": result.get("model_used"),
-            "provider": result.get("provider_used"),
-            "sourceCount": len([s for s in SOURCE_STORE if s.startswith(f"{run_id}_src_")]),
-        })
+        items.append(
+            {
+                "runId": run_id,
+                "title": f"Analysis for: {query_text}",
+                "query": query_text,
+                "status": run_status,
+                "priority": _infer_priority(query_text),
+                "createdAt": run["createdAt"],
+                "updatedAt": run["createdAt"],
+                "carbonG": DEFAULT_CARBON_G,
+                "model_used": result.get("model_used"),
+                "provider": result.get("provider_used"),
+                "sourceCount": len(
+                    [s for s in SOURCE_STORE if s.startswith(f"{run_id}_src_")]
+                ),
+            }
+        )
 
     if status:
         items = [i for i in items if i["status"] == status]
@@ -167,14 +176,20 @@ async def list_runs(
         items = [i for i in items if i["priority"] == priority]
     if q:
         q_lower = q.lower()
-        items = [i for i in items if q_lower in i["query"].lower() or q_lower in i["title"].lower()]
+        items = [
+            i
+            for i in items
+            if q_lower in i["query"].lower() or q_lower in i["title"].lower()
+        ]
 
-    sort_key = {"date": "createdAt", "name": "title", "priority": "priority"}.get(sort, "createdAt")
+    sort_key = {"date": "createdAt", "name": "title", "priority": "priority"}.get(
+        sort, "createdAt"
+    )
     items.sort(key=lambda x: x.get(sort_key, ""), reverse=(order != "asc"))
 
     total = len(items)
     start = (page - 1) * limit
-    paginated = items[start:start + limit]
+    paginated = items[start : start + limit]
 
     return {
         "items": paginated,
@@ -197,7 +212,9 @@ async def get_run(run_id: str):
     for doc in raw_docs:
         source_id = doc.get("doc_id") or doc.get("id")
         stored_url = SOURCE_STORE.get(source_id, {}).get("url") if source_id else None
-        enriched_docs.append({**doc, "id": source_id, "url": stored_url or doc.get("url")})
+        enriched_docs.append(
+            {**doc, "id": source_id, "url": stored_url or doc.get("url")}
+        )
 
     source_ids = [s for s in SOURCE_STORE if s.startswith(f"{run_id}_src_")]
     answer = result.get("answer", "No answer generated.")
@@ -230,7 +247,11 @@ async def get_run(run_id: str):
             "trustScore": DEFAULT_TRUST_SCORE,
             "carbonTotalG": DEFAULT_CARBON_G,
         },
-        "references": {"sourceIds": source_ids if source_ids else [s for s in SOURCE_STORE if run_id in s]},
+        "references": {
+            "sourceIds": (
+                source_ids if source_ids else [s for s in SOURCE_STORE if run_id in s]
+            )
+        },
     }
 
 
@@ -256,38 +277,91 @@ async def get_stats():
 @app.get("/api/dashboard/summary")
 async def dashboard_summary():
     total = len(RUN_STORE)
-    completed = sum(1 for r in RUN_STORE.values() if r.get("status") == RUN_STATUS_COMPLETED)
-    running = sum(1 for r in RUN_STORE.values() if r.get("status") == RUN_STATUS_RUNNING)
+    completed = sum(
+        1 for r in RUN_STORE.values() if r.get("status") == RUN_STATUS_COMPLETED
+    )
+    running = sum(
+        1 for r in RUN_STORE.values() if r.get("status") == RUN_STATUS_RUNNING
+    )
     drafts = sum(1 for r in RUN_STORE.values() if r.get("status") == RUN_STATUS_DRAFT)
     priorities = {"high": 0, "medium": 0, "low": 0}
     for run in RUN_STORE.values():
         priorities[_infer_priority(run.get("query", ""))] += 1
-    return {"totalCases": total, "completed": completed, "running": running, "drafts": drafts, "priorities": priorities}
+    return {
+        "totalCases": total,
+        "completed": completed,
+        "running": running,
+        "drafts": drafts,
+        "priorities": priorities,
+    }
 
 
 @app.get("/api/dashboard/research-trends")
 async def research_trends():
     from collections import Counter
-    words_to_skip = {"the","a","an","is","are","was","were","what","how","does","do","in","on","of","for","to","and","or","with","about","this","that","it","can","be","has","have","from","by","at"}
+
+    words_to_skip = {
+        "the",
+        "a",
+        "an",
+        "is",
+        "are",
+        "was",
+        "were",
+        "what",
+        "how",
+        "does",
+        "do",
+        "in",
+        "on",
+        "of",
+        "for",
+        "to",
+        "and",
+        "or",
+        "with",
+        "about",
+        "this",
+        "that",
+        "it",
+        "can",
+        "be",
+        "has",
+        "have",
+        "from",
+        "by",
+        "at",
+    }
     word_counts: Counter = Counter()
     for run in RUN_STORE.values():
         for w in run.get("query", "").lower().split():
             cleaned = w.strip("?.,!\"'()[]{}").lower()
             if len(cleaned) > 2 and cleaned not in words_to_skip:
                 word_counts[cleaned] += 1
-    return {"trends": [{"topic": w, "count": c} for w, c in word_counts.most_common(10)], "totalQueries": len(RUN_STORE)}
+    return {
+        "trends": [{"topic": w, "count": c} for w, c in word_counts.most_common(10)],
+        "totalQueries": len(RUN_STORE),
+    }
 
 
 @app.get("/api/dashboard/system-activity")
 async def system_activity():
     activities = []
-    for run_id, run in sorted(RUN_STORE.items(), key=lambda x: x[1].get("createdAt", ""), reverse=True)[:20]:
+    for run_id, run in sorted(
+        RUN_STORE.items(), key=lambda x: x[1].get("createdAt", ""), reverse=True
+    )[:20]:
         result = run.get("result", {})
-        activities.append({
-            "runId": run_id, "type": "query", "query": run.get("query", ""),
-            "status": run.get("status", "unknown"), "model_used": result.get("model_used"),
-            "provider": result.get("provider_used"), "timestamp": run.get("createdAt"),
-        })
+        activities.append(
+            {
+                "runId": run_id,
+                "type": "query",
+                "query": run.get("query", ""),
+                "status": run.get("status", "unknown"),
+                "model_used": result.get("model_used"),
+                "provider": result.get("provider_used"),
+                "timestamp": run.get("createdAt"),
+            }
+        )
     return {"activities": activities}
 
 
