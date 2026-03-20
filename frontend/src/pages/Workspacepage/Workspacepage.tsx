@@ -8,14 +8,18 @@ import {
   fetchResearchTrends,
   fetchSystemActivity,
   fetchAiEfficiency,
+  fetchTabCounts,
   createRun,
+  patchRun,
   type RunItem,
+  type RunStatus,
+  type RunPriority,
   type FilterTab,
   type SortField,
-  type SortOrder,
   type TrendItem,
   type ActivityItem,
   type AiEfficiencyResponse,
+  type TabCounts,
 } from './workspaceService';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -32,6 +36,7 @@ function statusLabel(status: string): string {
     case 'completed': return 'COMPLETED';
     case 'running':   return 'PROCESSING';
     case 'draft':     return 'DRAFT';
+    case 'in-review': return 'IN REVIEW';
     default:          return 'REVIEW NEEDED';
   }
 }
@@ -41,6 +46,7 @@ function statusCssClass(status: string): string {
     case 'completed': return 'status-completed';
     case 'running':   return 'status-processing';
     case 'draft':     return 'status-draft';
+    case 'in-review': return 'status-review-needed';
     default:          return 'status-review-needed';
   }
 }
@@ -49,6 +55,7 @@ function actionLabel(item: RunItem): string {
   if (item.status === 'completed') return 'View Report';
   if (item.status === 'draft')     return 'Continue Draft';
   if (item.status === 'running')   return 'Open Case';
+  if (item.status === 'in-review') return 'Open Case';
   return 'Open Case';
 }
 
@@ -65,12 +72,12 @@ function formatTimestamp(iso: string): string {
     const diffMs = now.getTime() - date.getTime();
     const diffH = Math.floor(diffMs / 3_600_000);
     const diffD = Math.floor(diffH / 24);
-    if (diffH < 1)  return 'Last run: just now';
-    if (diffH < 24) return `Last run: ${diffH} hour${diffH === 1 ? '' : 's'} ago`;
-    if (diffD < 7)  return `Last run: ${diffD} day${diffD === 1 ? '' : 's'} ago`;
-    return `Last run: ${date.toLocaleDateString('en-IE', { day: 'numeric', month: 'short', year: 'numeric' })}`;
+    if (diffH < 1)  return 'just now';
+    if (diffH < 24) return `${diffH}h ago`;
+    if (diffD < 7)  return `${diffD}d ago`;
+    return date.toLocaleDateString('en-IE', { day: 'numeric', month: 'short', year: 'numeric' });
   } catch {
-    return 'Last run: unknown';
+    return 'unknown';
   }
 }
 
@@ -81,9 +88,11 @@ function caseNumberFromId(runId: string): string {
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
-const Spinner: React.FC = () => (
-  <div className="ws-spinner" aria-label="Loading">
-    <div className="ws-spinner-ring" />
+// Page-level spinner shown in the header bar during any fetch
+const PageSpinner: React.FC = () => (
+  <div className="ws-page-spinner" aria-label="Loading">
+    <div className="ws-page-spinner-ring" />
+    <span className="ws-page-spinner-text">Loading…</span>
   </div>
 );
 
@@ -112,13 +121,14 @@ const EmptyState: React.FC<{ onNew: () => void }> = ({ onNew }) => (
   </div>
 );
 
-// New Research Case modal
+// ── New Research Case modal ──
 const NewCaseModal: React.FC<{
   onClose: () => void;
-  onSubmit: (query: string) => void;
+  onSubmit: (query: string, priority: RunPriority) => void;
   submitting: boolean;
 }> = ({ onClose, onSubmit, submitting }) => {
   const [query, setQuery] = useState('');
+  const [priority, setPriority] = useState<RunPriority>('medium');
 
   return (
     <div className="ws-modal-backdrop" onClick={onClose}>
@@ -139,16 +149,126 @@ const NewCaseModal: React.FC<{
             disabled={submitting}
             autoFocus
           />
+          <label className="ws-modal-label" style={{ marginTop: '12px' }}>Priority</label>
+          <div className="ws-priority-picker">
+            {(['low', 'medium', 'high'] as RunPriority[]).map(p => (
+              <button
+                key={p}
+                className={`ws-priority-option ws-priority-option-${p} ${priority === p ? 'active' : ''}`}
+                onClick={() => setPriority(p)}
+                disabled={submitting}
+                type="button"
+              >
+                {p.charAt(0).toUpperCase() + p.slice(1)}
+              </button>
+            ))}
+          </div>
         </div>
         <div className="ws-modal-footer">
           <button className="btn-secondary" onClick={onClose} disabled={submitting}>Cancel</button>
           <button
             className="btn-primary"
-            onClick={() => query.trim() && onSubmit(query.trim())}
+            onClick={() => query.trim() && onSubmit(query.trim(), priority)}
             disabled={submitting || !query.trim()}
           >
-            {submitting ? 'Creating…' : 'Create Case'}
+            {submitting
+              ? <><span className="ws-btn-spinner" /> Creating…</>
+              : 'Create Case'
+            }
           </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ── Case Detail modal (status + priority editing) ──
+const CaseDetailModal: React.FC<{
+  item: RunItem;
+  onClose: () => void;
+  onSave: (runId: string, updates: { status?: RunStatus; priority?: RunPriority }) => Promise<void>;
+  saving: boolean;
+}> = ({ item, onClose, onSave, saving }) => {
+  const [selectedStatus, setSelectedStatus] = useState<RunStatus>(item.status);
+  const [selectedPriority, setSelectedPriority] = useState<RunPriority>(item.priority);
+  const navigate = useNavigate();
+
+  const hasChanges = selectedStatus !== item.status || selectedPriority !== item.priority;
+
+  const statusOptions: { value: RunStatus; label: string }[] = [
+    { value: 'running',   label: 'In Progress' },
+    { value: 'in-review', label: 'In Review' },
+    { value: 'completed', label: 'Completed' },
+    { value: 'draft',     label: 'Draft' },
+  ];
+
+  return (
+    <div className="ws-modal-backdrop" onClick={onClose}>
+      <div className="ws-modal ws-modal--detail" onClick={e => e.stopPropagation()}>
+        <div className="ws-modal-header">
+          <div>
+            <h2 style={{ marginBottom: '4px' }}>{item.query}</h2>
+            <span style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>
+              {caseNumberFromId(item.runId)} · Last updated {formatTimestamp(item.updatedAt)}
+            </span>
+          </div>
+          <button className="ws-modal-close" onClick={onClose}>✕</button>
+        </div>
+
+        <div className="ws-modal-body">
+          {/* Status */}
+          <label className="ws-modal-label">Status</label>
+          <div className="ws-status-picker">
+            {statusOptions.map(opt => (
+              <button
+                key={opt.value}
+                className={`ws-status-option ws-status-option-${opt.value} ${selectedStatus === opt.value ? 'active' : ''}`}
+                onClick={() => setSelectedStatus(opt.value)}
+                disabled={saving}
+                type="button"
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Priority */}
+          <label className="ws-modal-label" style={{ marginTop: '20px' }}>Priority</label>
+          <div className="ws-priority-picker">
+            {(['low', 'medium', 'high'] as RunPriority[]).map(p => (
+              <button
+                key={p}
+                className={`ws-priority-option ws-priority-option-${p} ${selectedPriority === p ? 'active' : ''}`}
+                onClick={() => setSelectedPriority(p)}
+                disabled={saving}
+                type="button"
+              >
+                {p.charAt(0).toUpperCase() + p.slice(1)}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="ws-modal-footer" style={{ justifyContent: 'space-between' }}>
+          <button
+            className="btn-secondary"
+            onClick={() => navigate(actionRoute(item))}
+          >
+            Open Full Case →
+          </button>
+          <div style={{ display: 'flex', gap: '10px' }}>
+            <button className="btn-secondary" onClick={onClose} disabled={saving}>Cancel</button>
+            <button
+              className="btn-primary"
+              onClick={() => onSave(item.runId, { status: selectedStatus, priority: selectedPriority })}
+              disabled={saving || !hasChanges}
+            >
+              {saving
+                ? <><span className="ws-btn-spinner" /> Saving…</>
+                : 'Save Changes'
+              }
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -168,10 +288,12 @@ const WorkspacePage: React.FC<WorkspacePageProps> = ({ darkMode, toggleDarkMode 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // ── Tab counts ──
+  const [tabCounts, setTabCounts] = useState<TabCounts | null>(null);
+
   // ── Controls ──
   const [activeFilter, setActiveFilter] = useState<FilterTab>('all-cases');
   const [sortField, setSortField] = useState<SortField>('date');
-  const [sortOrder] = useState<SortOrder>('desc');
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [showFilterDropdown, setShowFilterDropdown] = useState(false);
@@ -187,6 +309,8 @@ const WorkspacePage: React.FC<WorkspacePageProps> = ({ darkMode, toggleDarkMode 
   // ── Modal state ──
   const [showNewCaseModal, setShowNewCaseModal] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [detailItem, setDetailItem] = useState<RunItem | null>(null);
+  const [saving, setSaving] = useState(false);
 
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -205,23 +329,26 @@ const WorkspacePage: React.FC<WorkspacePageProps> = ({ darkMode, toggleDarkMode 
     setLoading(true);
     setError(null);
     try {
-      const data = await fetchRuns({
-        page: currentPage,
-        limit: 10,
-        tab: activeFilter,
-        sort: sortField,
-        order: sortOrder,
-        q: debouncedSearch || undefined,
-      });
+      const [data, counts] = await Promise.all([
+        fetchRuns({
+          page: currentPage,
+          limit: 10,
+          tab: activeFilter,
+          sort: sortField,
+          q: debouncedSearch || undefined,
+        }),
+        fetchTabCounts(),
+      ]);
       setCases(data.items);
       setTotal(data.total);
       setTotalPages(data.totalPages);
+      setTabCounts(counts);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load cases');
     } finally {
       setLoading(false);
     }
-  }, [currentPage, activeFilter, sortField, sortOrder, debouncedSearch]);
+  }, [currentPage, activeFilter, sortField, debouncedSearch]);
 
   useEffect(() => { loadCases(); }, [loadCases]);
 
@@ -248,12 +375,11 @@ const WorkspacePage: React.FC<WorkspacePageProps> = ({ darkMode, toggleDarkMode 
   useEffect(() => { loadWidgets(); }, [loadWidgets]);
 
   // ── Create new case ──
-  const handleCreateCase = async (query: string) => {
+  const handleCreateCase = async (query: string, priority: RunPriority) => {
     setCreating(true);
     try {
-      const { runId } = await createRun(query);
+      const { runId } = await createRun(query, priority);
       setShowNewCaseModal(false);
-      // Refresh list then navigate to the new run
       await loadCases();
       navigate(`/analysis/${runId}`);
     } catch (err) {
@@ -263,29 +389,46 @@ const WorkspacePage: React.FC<WorkspacePageProps> = ({ darkMode, toggleDarkMode 
     }
   };
 
-  // ── Filter tab change ──
+  // ── Patch run (status / priority) ──
+  const handlePatchRun = async (
+    runId: string,
+    updates: { status?: RunStatus; priority?: RunPriority },
+  ) => {
+    setSaving(true);
+    try {
+      const updated = await patchRun(runId, updates);
+      // Optimistically update the local list
+      setCases(prev =>
+        prev.map(c =>
+          c.runId === runId
+            ? { ...c, status: updated.status, priority: updated.priority, updatedAt: updated.updatedAt }
+            : c,
+        ),
+      );
+      // Refresh tab counts since status/priority changed
+      fetchTabCounts().then(setTabCounts).catch(() => {});
+      setDetailItem(null);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to update case');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // ── Filter / sort helpers ──
   const handleFilterChange = (tab: FilterTab) => {
     setActiveFilter(tab);
     setCurrentPage(1);
     setShowFilterDropdown(false);
   };
 
-  // ── Sort change ──
   const handleSortChange = (field: SortField) => {
     setSortField(field);
     setCurrentPage(1);
     setShowSortDropdown(false);
   };
 
-  // ── Tab counts from total (approximation while data loads) ──
-  const tabCounts: Record<FilterTab, number | null> = {
-    'all-cases': total,
-    'drafts': null,
-    'completed': null,
-    'high-priority': null,
-  };
-
-  // ── Pagination helpers ──
+  // ── Pagination ──
   const pageNumbers = (): (number | '…')[] => {
     if (totalPages <= 5) return Array.from({ length: totalPages }, (_, i) => i + 1);
     const pages: (number | '…')[] = [1];
@@ -294,6 +437,12 @@ const WorkspacePage: React.FC<WorkspacePageProps> = ({ darkMode, toggleDarkMode 
     if (currentPage < totalPages - 2) pages.push('…');
     pages.push(totalPages);
     return pages;
+  };
+
+  // ── Tab label helper ──
+  const tabLabel = (tab: FilterTab, label: string) => {
+    const count = tabCounts?.[tab];
+    return count !== undefined && count > 0 ? `${label} (${count})` : label;
   };
 
   return (
@@ -319,6 +468,8 @@ const WorkspacePage: React.FC<WorkspacePageProps> = ({ darkMode, toggleDarkMode 
             )}
           </div>
           <div className="header-actions">
+            {/* Page-level spinner appears here when loading */}
+            {loading && <PageSpinner />}
             <button className="icon-btn notification-btn">
               <span className="notification-badge"></span>
               🔔
@@ -334,7 +485,6 @@ const WorkspacePage: React.FC<WorkspacePageProps> = ({ darkMode, toggleDarkMode 
           </div>
           <div className="page-actions">
             <div className="filter-sort-container">
-              {/* Filter dropdown */}
               <div className="dropdown">
                 <button className="btn-secondary" onClick={() => { setShowFilterDropdown(!showFilterDropdown); setShowSortDropdown(false); }}>
                   <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
@@ -352,7 +502,6 @@ const WorkspacePage: React.FC<WorkspacePageProps> = ({ darkMode, toggleDarkMode 
                 )}
               </div>
 
-              {/* Sort dropdown */}
               <div className="dropdown">
                 <button className="btn-secondary" onClick={() => { setShowSortDropdown(!showSortDropdown); setShowFilterDropdown(false); }}>
                   Sort
@@ -376,26 +525,22 @@ const WorkspacePage: React.FC<WorkspacePageProps> = ({ darkMode, toggleDarkMode 
           </div>
         </div>
 
-        {/* Filter tabs */}
+        {/* Filter tabs with live counts */}
         <div className="filter-tabs">
-          {(['all-cases', 'drafts', 'completed', 'high-priority'] as FilterTab[]).map(tab => {
-            const labels: Record<FilterTab, string> = {
-              'all-cases': 'All Cases',
-              'drafts': 'Drafts',
-              'completed': 'Completed',
-              'high-priority': 'High Priority',
-            };
-            const count = tab === 'all-cases' && total > 0 ? ` (${total})` : '';
-            return (
-              <button
-                key={tab}
-                className={`filter-tab ${activeFilter === tab ? 'active' : ''}`}
-                onClick={() => handleFilterChange(tab)}
-              >
-                {labels[tab]}{count}
-              </button>
-            );
-          })}
+          {([
+            { tab: 'all-cases'     as FilterTab, label: 'All Cases' },
+            { tab: 'drafts'        as FilterTab, label: 'Drafts' },
+            { tab: 'completed'     as FilterTab, label: 'Completed' },
+            { tab: 'high-priority' as FilterTab, label: 'High Priority' },
+          ]).map(({ tab, label }) => (
+            <button
+              key={tab}
+              className={`filter-tab ${activeFilter === tab ? 'active' : ''}`}
+              onClick={() => handleFilterChange(tab)}
+            >
+              {tabLabel(tab, label)}
+            </button>
+          ))}
         </div>
 
         {/* Cases area */}
@@ -415,7 +560,7 @@ const WorkspacePage: React.FC<WorkspacePageProps> = ({ darkMode, toggleDarkMode 
                   <div
                     key={item.runId}
                     className="case-card"
-                    onClick={() => navigate(actionRoute(item))}
+                    onClick={() => setDetailItem(item)}
                   >
                     <div className="case-header">
                       <span className={`case-status ${statusCssClass(item.status)}`}>
@@ -455,7 +600,10 @@ const WorkspacePage: React.FC<WorkspacePageProps> = ({ darkMode, toggleDarkMode 
                           <span className={`ws-priority-badge ws-priority-${item.priority}`}>{item.priority}</span>
                         </div>
                       </div>
-                      <button className="case-action-btn" onClick={e => { e.stopPropagation(); navigate(actionRoute(item)); }}>
+                      <button
+                        className="case-action-btn"
+                        onClick={e => { e.stopPropagation(); navigate(actionRoute(item)); }}
+                      >
                         {actionLabel(item)}
                       </button>
                     </div>
@@ -463,7 +611,6 @@ const WorkspacePage: React.FC<WorkspacePageProps> = ({ darkMode, toggleDarkMode 
                 ))}
               </div>
 
-              {/* Pagination */}
               <div className="pagination">
                 <span className="pagination-info">
                   Showing {Math.min((currentPage - 1) * 10 + 1, total)}–{Math.min(currentPage * 10, total)} of {total} research case{total !== 1 ? 's' : ''}
@@ -494,8 +641,6 @@ const WorkspacePage: React.FC<WorkspacePageProps> = ({ darkMode, toggleDarkMode 
 
       {/* ── Right sidebar ── */}
       <aside className="right-sidebar">
-
-        {/* Research Trends */}
         <div className="sidebar-widget">
           <div className="widget-header">
             <h3>RESEARCH TRENDS</h3>
@@ -521,7 +666,6 @@ const WorkspacePage: React.FC<WorkspacePageProps> = ({ darkMode, toggleDarkMode 
           </div>
         </div>
 
-        {/* AI Efficiency */}
         <div className="efficiency-card">
           <div className="efficiency-icon">✓</div>
           <h4 className="efficiency-title">AI Efficiency</h4>
@@ -545,7 +689,6 @@ const WorkspacePage: React.FC<WorkspacePageProps> = ({ darkMode, toggleDarkMode 
           <div className="efficiency-badge">Efficiency</div>
         </div>
 
-        {/* System Activity */}
         <div className="sidebar-widget">
           <div className="widget-header"><h3>SYSTEM ACTIVITY</h3></div>
           <div className="widget-content">
@@ -564,7 +707,7 @@ const WorkspacePage: React.FC<WorkspacePageProps> = ({ darkMode, toggleDarkMode 
                   <div className="activity-content">
                     <p className="activity-title">{a.query.length > 60 ? a.query.slice(0, 60) + '…' : a.query}</p>
                     <p className="activity-time">
-                      {a.status} · {a.model_used ?? 'unknown model'} · {formatTimestamp(a.timestamp).replace('Last run: ', '')}
+                      {a.status} · {a.model_used ?? 'unknown model'} · {formatTimestamp(a.timestamp)}
                     </p>
                   </div>
                 </div>
@@ -573,7 +716,6 @@ const WorkspacePage: React.FC<WorkspacePageProps> = ({ darkMode, toggleDarkMode 
           </div>
         </div>
 
-        {/* AI Agent launch */}
         <div className="ai-assistant-launch" onClick={() => navigate('/ai-agent')}>
           <div className="ai-launch-inner">
             <div className="ai-launch-icon">
@@ -600,12 +742,21 @@ const WorkspacePage: React.FC<WorkspacePageProps> = ({ darkMode, toggleDarkMode 
         </div>
       </aside>
 
-      {/* ── New Case Modal ── */}
+      {/* ── Modals ── */}
       {showNewCaseModal && (
         <NewCaseModal
           onClose={() => !creating && setShowNewCaseModal(false)}
           onSubmit={handleCreateCase}
           submitting={creating}
+        />
+      )}
+
+      {detailItem && (
+        <CaseDetailModal
+          item={detailItem}
+          onClose={() => !saving && setDetailItem(null)}
+          onSave={handlePatchRun}
+          saving={saving}
         />
       )}
     </div>

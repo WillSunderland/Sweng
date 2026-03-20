@@ -2,7 +2,7 @@ import { API_BASE_URL } from '../../constants/apiConfig';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-export type RunStatus = 'running' | 'completed' | 'draft';
+export type RunStatus = 'running' | 'completed' | 'draft' | 'in-review';
 export type RunPriority = 'high' | 'medium' | 'low';
 export type SortField = 'date' | 'name' | 'priority';
 export type SortOrder = 'asc' | 'desc';
@@ -33,7 +33,15 @@ export interface RunsResponse {
 export interface CreateRunResponse {
   runId: string;
   status: RunStatus;
+  priority: RunPriority;
   createdAt: string;
+}
+
+export interface PatchRunResponse {
+  runId: string;
+  status: RunStatus;
+  priority: RunPriority;
+  updatedAt: string;
 }
 
 export interface TrendItem {
@@ -78,15 +86,27 @@ export interface DashboardSummaryResponse {
   priorities: { high: number; medium: number; low: number };
 }
 
-// ─── Query param helpers ───────────────────────────────────────────────────────
+export interface TabCounts {
+  'all-cases': number;
+  drafts: number;
+  completed: number;
+  'high-priority': number;
+}
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function filterTabToParams(tab: FilterTab): { status?: string; priority?: string } {
   switch (tab) {
-    case 'drafts':      return { status: 'draft' };
-    case 'completed':   return { status: 'completed' };
+    case 'drafts':        return { status: 'draft' };
+    case 'completed':     return { status: 'completed' };
     case 'high-priority': return { priority: 'high' };
-    default:            return {};
+    default:              return {};
   }
+}
+
+// Name sorts A→Z (asc); date and priority sort newest/highest first (desc)
+function sortOrderFor(sort: SortField): SortOrder {
+  return sort === 'name' ? 'asc' : 'desc';
 }
 
 // ─── API calls ────────────────────────────────────────────────────────────────
@@ -96,11 +116,11 @@ export async function fetchRuns(params: {
   limit?: number;
   tab?: FilterTab;
   sort?: SortField;
-  order?: SortOrder;
   q?: string;
 }): Promise<RunsResponse> {
-  const { page = 1, limit = 10, tab = 'all-cases', sort = 'date', order = 'desc', q } = params;
+  const { page = 1, limit = 10, tab = 'all-cases', sort = 'date', q } = params;
   const tabParams = filterTabToParams(tab);
+  const order = sortOrderFor(sort);
 
   const qs = new URLSearchParams({
     page: String(page),
@@ -117,14 +137,46 @@ export async function fetchRuns(params: {
   return res.json();
 }
 
-export async function createRun(query: string): Promise<CreateRunResponse> {
+export async function createRun(
+  query: string,
+  priority: RunPriority = 'medium',
+): Promise<CreateRunResponse> {
   const res = await fetch(`${API_BASE_URL}/api/runs`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ query }),
+    body: JSON.stringify({ query, priority }),
   });
   if (!res.ok) throw new Error(`Failed to create run: ${res.status}`);
   return res.json();
+}
+
+export async function patchRun(
+  runId: string,
+  updates: { status?: RunStatus; priority?: RunPriority },
+): Promise<PatchRunResponse> {
+  const res = await fetch(`${API_BASE_URL}/api/runs/${runId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(updates),
+  });
+  if (!res.ok) throw new Error(`Failed to update run: ${res.status}`);
+  return res.json();
+}
+
+// Fetches counts for all four tabs with 4 parallel requests (limit=1 to minimise data)
+export async function fetchTabCounts(): Promise<TabCounts> {
+  const [all, drafts, completed, highPriority] = await Promise.all([
+    fetch(`${API_BASE_URL}/api/runs?page=1&limit=1`).then(r => r.json()),
+    fetch(`${API_BASE_URL}/api/runs?page=1&limit=1&status=draft`).then(r => r.json()),
+    fetch(`${API_BASE_URL}/api/runs?page=1&limit=1&status=completed`).then(r => r.json()),
+    fetch(`${API_BASE_URL}/api/runs?page=1&limit=1&priority=high`).then(r => r.json()),
+  ]);
+  return {
+    'all-cases':     all.total ?? 0,
+    'drafts':        drafts.total ?? 0,
+    'completed':     completed.total ?? 0,
+    'high-priority': highPriority.total ?? 0,
+  };
 }
 
 export async function fetchResearchTrends(): Promise<ResearchTrendsResponse> {
