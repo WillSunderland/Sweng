@@ -1,18 +1,49 @@
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any
 from app.graph.state import GraphState
 from app.services.carbon_estimator import estimate_carbon_tons
 
 logger = logging.getLogger(__name__)
 
+CITATION_PATTERN = re.compile(r"\[Source:\s*([^\]]+)\]")
+
+
+def _extract_citations(answer: str) -> list[str]:
+    return [m.strip() for m in CITATION_PATTERN.findall(answer)]
+
+
+def _validate_citations(cited_titles: list[str], retrieved_sources: list[dict]) -> dict:
+    retrieved_titles = {s.get("title", "").strip() for s in retrieved_sources}
+    valid, hallucinated = [], []
+    for title in cited_titles:
+        matched = any(
+            title.lower() in rt.lower() or rt.lower() in title.lower()
+            for rt in retrieved_titles
+        )
+        if matched:
+            valid.append(title)
+        else:
+            hallucinated.append(title)
+    uncited = [
+        t for t in retrieved_titles
+        if not any(t.lower() in c.lower() or c.lower() in t.lower() for c in cited_titles)
+    ]
+    total = len(cited_titles)
+    return {
+        "valid_citations": valid,
+        "hallucinated_citations": hallucinated,
+        "uncited_sources": uncited,
+        "citation_accuracy": round(len(valid) / total if total > 0 else 1.0, 2),
+    }
+
 
 def llmOutputNode(state: GraphState) -> dict[str, Any]:
-    """Formats the final response including LLM answer and sources."""
+    """Formats the final response including LLM answer, sources, and citation validation."""
     error = state.get("error")
 
-    # If there's an error and no LLM response (fallback failed too)
     if error and not state.get("llm_response"):
         carbon_count_in_tons = estimate_carbon_tons(
             state.get("model_used"),
@@ -31,10 +62,10 @@ def llmOutputNode(state: GraphState) -> dict[str, Any]:
                 "plan": list(state.get("plan", [])),
                 "reasoning_steps": list(state.get("reasoning_steps", [])),
                 "retrieval_skipped": not state.get("shouldFetch", True),
+                "citation_validation": None,
             }
         }
 
-    # Extract sources from search results
     hits = state.get("accumulatedSources") or state.get("searchResults", [])
     formatted_sources = []
 
@@ -54,13 +85,24 @@ def llmOutputNode(state: GraphState) -> dict[str, Any]:
             }
         )
 
+    answer = state.get("llm_response", "No answer generated.")
+    cited_titles = _extract_citations(answer)
+    citation_validation = _validate_citations(cited_titles, formatted_sources)
+
+    if citation_validation["hallucinated_citations"]:
+        logger.warning(
+            "Hallucinated citations detected: %s",
+            citation_validation["hallucinated_citations"],
+        )
+
     carbon_count_in_tons = estimate_carbon_tons(
         state.get("model_used"),
         state.get("provider_used"),
     )
+
     return {
         "response": {
-            "answer": state.get("llm_response", "No answer generated."),
+            "answer": answer,
             "sources": formatted_sources,
             "model_used": state.get("model_used"),
             "provider": state.get("provider_used"),
@@ -71,5 +113,6 @@ def llmOutputNode(state: GraphState) -> dict[str, Any]:
             "plan": list(state.get("plan", [])),
             "reasoning_steps": list(state.get("reasoning_steps", [])),
             "retrieval_skipped": not state.get("shouldFetch", True),
+            "citation_validation": citation_validation,
         }
     }
