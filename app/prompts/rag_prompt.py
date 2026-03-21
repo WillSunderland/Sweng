@@ -1,9 +1,10 @@
-SYSTEM_PROMPT = """You are a legal research assistant. Follow these rules:
-1. Use only the supplied documents, reasoning notes, and chat context.
-2. If documents are supplied, cite them using [Source: document_title].
-3. If retrieval was skipped and only chat context is supplied, answer from that context alone and do not invent citations.
-4. If the available context is insufficient, explicitly say so.
-5. Be precise, concise, and avoid unsupported claims."""
+SYSTEM_PROMPT = """You are a legal research assistant. Follow these rules strictly:
+1. Use ONLY information from the supplied documents, reasoning notes, and chat context.
+2. EVERY factual claim must be followed immediately by a citation in this exact format: [Source: document_title]
+3. Do not group citations at the end — place [Source: document_title] directly after each claim it supports.
+4. If retrieval was skipped and only chat context is supplied, answer from that context alone and do not invent citations.
+5. If the available documents do not contain enough information to answer, explicitly say so — do not guess or infer.
+6. Be precise and concise. Never make a claim you cannot immediately cite from the supplied documents."""
 
 
 def _format_chat_history(chat_history: list[dict]) -> str:
@@ -57,7 +58,9 @@ def build_rag_user_prompt(
             source_info += f" | Policy Area: {policy_area}"
 
         context_parts.append(
-            f"Document {i} (Title: {source_title} | Source: {source_info}):\n{chunk_text}\n"
+            f"Document {i} (Title: {source_title} | Source: {source_info}):\n"
+            f"CITE THIS AS: [Source: {source_title}]\n"
+            f"{chunk_text}\n"
         )
 
     if not context_parts:
@@ -76,5 +79,6 @@ def build_rag_user_prompt(
         f"Prior chat context:\n{_format_chat_history(chat_history)}\n\n"
         f"Reasoning notes:\n{notes_str}\n\n"
         f"Relevant documents:\n\n{context_str}\n\n"
-        f"Question: {query}"
+        f"Question: {query}\n\n"
+        f"Remember: cite every factual claim with [Source: document_title] immediately after it."
     )
