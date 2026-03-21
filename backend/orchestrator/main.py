@@ -117,6 +117,8 @@ async def get_run(run_id: str):
     carbon_tons = float(result.get("carbonCountInTons", 0.0))
     carbon_grams = tons_to_grams(carbon_tons) if carbon_tons else DEFAULT_CARBON_G
 
+    citation_validation = result.get("citation_validation")
+
     return {
         "runId": run_id,
         "status": run.get("status", RUN_STATUS_COMPLETED),
@@ -150,6 +152,7 @@ async def get_run(run_id: str):
         "references": {
             "sourceIds": source_ids,
         },
+        "citationValidation": citation_validation,
     }
 
 
