@@ -1,6 +1,7 @@
 import httpx
 import pytest
 
+
 @pytest.mark.anyio
 async def test_health_endpoint():
     async with httpx.AsyncClient() as client:
