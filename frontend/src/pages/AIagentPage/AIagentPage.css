@@ -677,3 +677,77 @@
   .chat-header-bar { padding: 10px 16px; }
   .finding-card { padding: 10px 12px; }
 }
+
+/* ── Per-query green metrics badge ── */
+.green-metrics-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 10px;
+  background: rgba(16, 185, 129, 0.08);
+  border: 1px solid rgba(16, 185, 129, 0.2);
+  border-radius: 12px;
+  font-size: 10px;
+  font-weight: 500;
+  color: #065f46;
+  white-space: nowrap;
+}
+
+[data-theme="dark"] .green-metrics-badge {
+  background: rgba(16, 185, 129, 0.12);
+  border-color: rgba(16, 185, 129, 0.25);
+  color: #6ee7b7;
+}
+
+.rpanel-green-empty {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.5;
+  padding: 4px 0;
+}
+
+.rpanel-stats-section-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.8px;
+  color: var(--text-muted);
+  padding: 4px 0 2px;
+}
+
+[data-theme="dark"] .rpanel-stats-section-label {
+  color: var(--text);
+}
+
+.rpanel-stats-divider {
+  height: 1px;
+  background: var(--border-light);
+  margin: 8px 0 4px;
+}
+
+.rpanel-green-value {
+  color: #10b981;
+}
+
+[data-theme="dark"] .rpanel-green-value {
+  color: #6ee7b7;
+}
+
+.rpanel-carbon-context {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.5;
+  padding: 4px 0 2px;
+}
+
+[data-theme="dark"] .rpanel-carbon-context {
+  color: var(--text);
+}
+
+.rpanel-carbon-leaf {
+  flex-shrink: 0;
+}

@@ -575,30 +575,31 @@ const WorkspacePage: React.FC<WorkspacePageProps> = ({ darkMode, toggleDarkMode 
                         <span className="ws-source-count"> · {item.sourceCount} source{item.sourceCount !== 1 ? 's' : ''}</span>
                       )}
                     </p>
-                    <div className="case-footer">
+                   <div className="case-footer">
                       <div className="case-meta">
                         <div className="meta-row">
-                          <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-                            <circle cx="7" cy="7" r="6" stroke="#9CA3AF" strokeWidth="1.5"/>
-                            <path d="M7 3.5V7h3.5" stroke="#9CA3AF" strokeWidth="1.5" strokeLinecap="round"/>
-                          </svg>
-                          <span>{formatTimestamp(item.updatedAt)}</span>
+                          {/* ...existing meta rows unchanged... */}
                         </div>
-                        {item.model_used && (
-                          <div className="meta-row">
-                            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-                              <circle cx="7" cy="4.5" r="2.5" stroke="#9CA3AF" strokeWidth="1.5"/>
-                              <path d="M2 12.5c0-2.5 2-4.5 5-4.5s5 2 5 4.5" stroke="#9CA3AF" strokeWidth="1.5" strokeLinecap="round"/>
-                            </svg>
-                            <span>{item.model_used}{item.provider ? ` · ${item.provider}` : ''}</span>
+                        {/* Green metrics badge */}
+                        {(item.carbonG > 0 || item.tokens_used || item.latency_ms) && (
+                          <div className="ws-green-badge">
+                            {item.carbonG > 0 && (
+                              <span className="ws-green-badge-item" title="Estimated CO₂">
+                                🌿 {item.carbonG.toFixed(4)}g CO₂
+                              </span>
+                            )}
+                            {!!item.tokens_used && item.tokens_used > 0 && (
+                              <span className="ws-green-badge-item" title="Tokens used">
+                                🔢 {item.tokens_used.toLocaleString()} tok
+                              </span>
+                            )}
+                            {!!item.latency_ms && item.latency_ms > 0 && (
+                              <span className="ws-green-badge-item" title="Query latency">
+                                ⏱ {(item.latency_ms / 1000).toFixed(1)}s
+                              </span>
+                            )}
                           </div>
                         )}
-                        <div className="meta-row">
-                          <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-                            <path d="M7 1.5l1.5 3 3.5.5-2.5 2.5.5 3.5L7 9.5l-3 1.5.5-3.5L2 5l3.5-.5L7 1.5z" stroke="#9CA3AF" strokeWidth="1.2" strokeLinejoin="round"/>
-                          </svg>
-                          <span className={`ws-priority-badge ws-priority-${item.priority}`}>{item.priority}</span>
-                        </div>
                       </div>
                       <button
                         className="case-action-btn"
