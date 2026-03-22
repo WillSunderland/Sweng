@@ -13,8 +13,10 @@ sys.path.insert(0, str(ROOT_DIR))
 django_module = types.ModuleType("django")
 django_http_module = types.ModuleType("django.http")
 
+
 class _StreamingHttpResponse:  # pragma: no cover - used only for import-time compatibility
     pass
+
 
 django_http_module.StreamingHttpResponse = _StreamingHttpResponse
 django_module.http = django_http_module
