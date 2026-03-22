@@ -20,7 +20,7 @@ interface ParsedResponse {
   citations: Citation[];
 }
 
-// NEW: Green metrics captured per query from real backend values
+// Green metrics captured per query from real backend values
 interface GreenMetrics {
   carbonG: number;
   tokensUsed: number;
@@ -35,7 +35,7 @@ interface Message {
   time: string;
   runId?: string;
   routedTo?: string;
-  metrics?: GreenMetrics; // NEW: per-message real metrics
+  metrics?: GreenMetrics;
 }
 
 interface RetrievedDocument {
@@ -88,7 +88,7 @@ interface RunResult {
   references?: {
     sourceIds: string[];
   };
-  // NEW: real green metrics from backend
+  // Real green metrics from backend
   reasoningPath?: {
     carbonTotalG?: number;
     latencyMs?: number;
@@ -204,7 +204,10 @@ async function buildCitationsFromSourceIds(sourceIds: string[]): Promise<Citatio
     const detail = await fetchSourceDetail(id);
     const title = detail?.title || titleFromId(id);
     const excerpt = detail?.fullText ? cleanText(detail.fullText).slice(0, 220) : undefined;
-    const url = resolveUrl(id, undefined, detail?.billId, detail?.billType, detail?.billNumber, detail?.billId?.match(/^(\d+)-/)?.[1]);
+    const url = resolveUrl(
+      id, undefined, detail?.billId, detail?.billType,
+      detail?.billNumber, detail?.billId?.match(/^(\d+)-/)?.[1],
+    );
     citations.push({ id, title, url, excerpt });
   }
   return citations;
@@ -212,16 +215,21 @@ async function buildCitationsFromSourceIds(sourceIds: string[]): Promise<Citatio
 
 function buildCitationsFromDocs(docs: RetrievedDocument[]): Citation[] {
   const seen = new Set<string>();
-  return docs.map((doc, i) => {
-    const id = doc.id ?? doc._id ?? doc.doc_id ?? String(i + 1);
-    if (seen.has(id)) return null;
-    seen.add(id);
-    const rawSource = doc.url ?? doc.source ?? doc.metadata?.url ?? doc.metadata?.source;
-    const title = doc.title ?? doc.metadata?.title ?? titleFromId(id);
-    const url = resolveUrl(id, rawSource as string | undefined, doc.bill_id, doc.bill_type, doc.bill_number, doc.bill_id?.match(/^(\d+)-/)?.[1]);
-    const excerpt = cleanText(doc.text ?? doc.content ?? doc.chunk_text ?? '').slice(0, 220) || undefined;
-    return { id, title, url, excerpt } as Citation;
-  }).filter((c): c is Citation => c !== null);
+  return docs
+    .map((doc, i) => {
+      const id = doc.id ?? doc._id ?? doc.doc_id ?? String(i + 1);
+      if (seen.has(id)) return null;
+      seen.add(id);
+      const rawSource = doc.url ?? doc.source ?? doc.metadata?.url ?? doc.metadata?.source;
+      const title = doc.title ?? doc.metadata?.title ?? titleFromId(id);
+      const url = resolveUrl(
+        id, rawSource as string | undefined, doc.bill_id,
+        doc.bill_type, doc.bill_number, doc.bill_id?.match(/^(\d+)-/)?.[1],
+      );
+      const excerpt = cleanText(doc.text ?? doc.content ?? doc.chunk_text ?? '').slice(0, 220) || undefined;
+      return { id, title, url, excerpt } as Citation;
+    })
+    .filter((c): c is Citation => c !== null);
 }
 
 function extractAnswer(run: RunResult): string {
@@ -229,14 +237,18 @@ function extractAnswer(run: RunResult): string {
   let text = cleanText(run.agentCommentary?.content ?? '');
   text = text.replace(/^Graph Result:\s*/i, '').trim();
   const msgMatch = text.match(/'messages':\s*\[([^\]]+)\]/);
-  if (msgMatch) text = msgMatch[1].replace(/'/g, '').split(',').map((s) => s.trim()).filter(Boolean).join(' ');
+  if (msgMatch) {
+    text = msgMatch[1].replace(/'/g, '').split(',').map((s) => s.trim()).filter(Boolean).join(' ');
+  }
   if (text && text !== 'No result yet') return text;
   return cleanText(run.keyFinding?.summary ?? '');
 }
 
 async function parseResponse(run: RunResult): Promise<ParsedResponse> {
   const text = extractAnswer(run);
-  if (!text) return { summary: 'The analysis completed but did not produce a readable response.', bullets: [], citations: [] };
+  if (!text) {
+    return { summary: 'The analysis completed but did not produce a readable response.', bullets: [], citations: [] };
+  }
   const sentences = text.split(/(?<=[.!?])\s+/).map((s) => s.trim()).filter((s) => s.length > 0);
   const summary = sentences[0] ?? text;
   const bullets = sentences.length > 1 ? sentences.slice(1) : [];
@@ -277,7 +289,10 @@ function guessRoute(query: string, run?: RunResult): 'nvidia' | 'huggingface' {
 
 // ─── FormattedResponse ────────────────────────────────────────────────────────
 
-const FormattedResponse: React.FC<{ parsed: ParsedResponse }> = ({ parsed }) => {
+const FormattedResponse: React.FC<{
+  parsed: ParsedResponse;
+  onCitationClick: (c: Citation) => void;
+}> = ({ parsed, onCitationClick }) => {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   return (
     <div className="formatted-response">
@@ -300,13 +315,26 @@ const FormattedResponse: React.FC<{ parsed: ParsedResponse }> = ({ parsed }) => 
                     </button>
                   )}
                   <span className="citation-id">[{c.id}]</span>
-                  <span className="citation-title">{c.title}</span>
-                  {c.url
-                    ? <a href={c.url} target="_blank" rel="noreferrer noopener" className="citation-open-btn" title={`Open: ${c.url}`}>Open ↗</a>
-                    : <span className="citation-no-link">No link</span>
-                  }
+                  <button className="citation-title-btn" onClick={() => onCitationClick(c)}>
+                    {c.title}
+                  </button>
+                  {c.url ? (
+                    <a
+                      href={c.url}
+                      target="_blank"
+                      rel="noreferrer noopener"
+                      className="citation-open-btn"
+                      title={`Open: ${c.url}`}
+                    >
+                      Open ↗
+                    </a>
+                  ) : (
+                    <span className="citation-no-link">No link</span>
+                  )}
                 </div>
-                {expandedId === c.id && c.excerpt && <p className="citation-excerpt">"{c.excerpt}…"</p>}
+                {expandedId === c.id && c.excerpt && (
+                  <p className="citation-excerpt">"{c.excerpt}…"</p>
+                )}
               </div>
             ))}
           </div>
@@ -341,7 +369,6 @@ const TaskIcon: React.FC<{ type: ResearchTask['icon'] }> = ({ type }) => {
 
 interface ReasoningStep { label: string; description: string; status: 'done' | 'active' | 'pending'; time?: string; tags?: string[]; resultCount?: string; progress?: number; }
 
-// NEW: accepts real session and last-query metrics
 const ReasoningPanel: React.FC<{
   routedTo?: string;
   isTyping?: boolean;
@@ -407,7 +434,7 @@ const ReasoningPanel: React.FC<{
         <p className="trust-desc">Verified against official legal statute datasets.</p>
       </div>
 
-      {/* ── Green Metrics Stats — real backend values ── */}
+      {/* Green Metrics Stats — real backend values */}
       <div className="rpanel-stats">
         {(!sessionMetrics || sessionMetrics.queryCount === 0) ? (
           <div className="rpanel-green-empty">
@@ -472,7 +499,11 @@ const AIagentPage: React.FC<{ darkMode?: boolean; toggleDarkMode?: () => void }>
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
 
-  // NEW: session-level cumulative green metrics
+  // Document preview state
+  const [previewCitation, setPreviewCitation] = useState<Citation | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+
+  // Session-level cumulative green metrics
   const [sessionMetrics, setSessionMetrics] = useState({
     totalCarbonG: 0,
     totalTokens: 0,
@@ -484,6 +515,20 @@ const AIagentPage: React.FC<{ darkMode?: boolean; toggleDarkMode?: () => void }>
 
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages, isTyping]);
   useEffect(() => { inputRef.current?.focus(); }, []);
+
+  // Citation click → fetch full text, show doc preview panel
+  const handleCitationClick = useCallback(async (c: Citation) => {
+    setPreviewCitation(c);
+    setPreviewLoading(true);
+    const detail = await fetchSourceDetail(c.id);
+    if (detail?.fullText) {
+      setPreviewCitation({
+        ...c,
+        excerpt: cleanText(detail.fullText).slice(0, 6000),
+      });
+    }
+    setPreviewLoading(false);
+  }, []);
 
   const handleSend = useCallback(async (text?: string): Promise<void> => {
     const messageText = (text ?? input).trim();
@@ -499,14 +544,14 @@ const AIagentPage: React.FC<{ darkMode?: boolean; toggleDarkMode?: () => void }>
       const parsed = await parseResponse(run);
       const routedTo = guessRoute(messageText, run);
 
-      // NEW: extract real green metrics from backend reasoningPath
+      // Extract real green metrics from backend reasoningPath
       const metrics: GreenMetrics = {
         carbonG: run.reasoningPath?.carbonTotalG ?? 0,
         tokensUsed: run.reasoningPath?.tokensUsed ?? 0,
         latencyMs: run.reasoningPath?.latencyMs ?? 0,
       };
 
-      // NEW: accumulate into session totals
+      // Accumulate into session totals
       setSessionMetrics((prev) => ({
         totalCarbonG: prev.totalCarbonG + metrics.carbonG,
         totalTokens: prev.totalTokens + metrics.tokensUsed,
@@ -523,7 +568,7 @@ const AIagentPage: React.FC<{ darkMode?: boolean; toggleDarkMode?: () => void }>
           time: nowStr(),
           runId,
           routedTo,
-          metrics, // NEW: attach metrics to message for per-query badge
+          metrics,
         },
       ]);
     } catch (err: unknown) {
@@ -619,9 +664,26 @@ const AIagentPage: React.FC<{ darkMode?: boolean; toggleDarkMode?: () => void }>
           </button>
           {toggleDarkMode && (
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 4px' }}>
-              <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{darkMode ? 'Dark Mode' : 'Light Mode'}</span>
-              <button onClick={toggleDarkMode} style={{ width: '44px', height: '24px', borderRadius: '999px', border: 'none', cursor: 'pointer', padding: 0, background: darkMode ? '#3b82f6' : '#e2e8f0', transition: 'background 0.3s ease', display: 'flex', alignItems: 'center' }}>
-                <span className="toggle-thumb" style={{ width: '18px', height: '18px', borderRadius: '50%', background: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', transform: darkMode ? 'translateX(22px)' : 'translateX(3px)', boxShadow: '0 1px 4px rgba(0,0,0,0.2)' }}>
+              <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                {darkMode ? 'Dark Mode' : 'Light Mode'}
+              </span>
+              <button
+                onClick={toggleDarkMode}
+                style={{
+                  width: '44px', height: '24px', borderRadius: '999px',
+                  border: 'none', cursor: 'pointer', padding: 0,
+                  background: darkMode ? '#3b82f6' : '#e2e8f0',
+                  transition: 'background 0.3s ease',
+                  display: 'flex', alignItems: 'center',
+                }}
+              >
+                <span className="toggle-thumb" style={{
+                  width: '18px', height: '18px', borderRadius: '50%',
+                  background: 'white', display: 'flex', alignItems: 'center',
+                  justifyContent: 'center', overflow: 'hidden',
+                  transform: darkMode ? 'translateX(22px)' : 'translateX(3px)',
+                  boxShadow: '0 1px 4px rgba(0,0,0,0.2)',
+                }}>
                   <img src={darkMode ? moonIcon : sunIcon} width="12" height="12" style={{ objectFit: 'contain' }} />
                 </span>
               </button>
@@ -659,7 +721,7 @@ const AIagentPage: React.FC<{ darkMode?: boolean; toggleDarkMode?: () => void }>
                 </svg>
                 <span>Trust Score 98%</span>
               </div>
-              {/* NEW: live session CO₂ in header once queries run */}
+              {/* Live session CO₂ in header once queries run */}
               {sessionMetrics.queryCount > 0 && (
                 <div className="header-badge header-badge-green">
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="2.5">
@@ -708,7 +770,7 @@ const AIagentPage: React.FC<{ darkMode?: boolean; toggleDarkMode?: () => void }>
                       <div className="message-content">
                         <div className={`message-bubble ${msg.type}`}>
                           {msg.type === 'assistant' && msg.parsed
-                            ? <FormattedResponse parsed={msg.parsed} />
+                            ? <FormattedResponse parsed={msg.parsed} onCitationClick={handleCitationClick} />
                             : msg.text}
                         </div>
 
@@ -726,7 +788,7 @@ const AIagentPage: React.FC<{ darkMode?: boolean; toggleDarkMode?: () => void }>
                               {msg.runId.slice(0, 18)}…
                             </span>
                           )}
-                          {/* NEW: per-query green metrics badge — only shows real non-zero values */}
+                          {/* Per-query green metrics badge — only shows real non-zero values */}
                           {msg.metrics && (msg.metrics.carbonG > 0 || msg.metrics.tokensUsed > 0) && (
                             <span className="green-metrics-badge" title="Green computing metrics for this query">
                               🌿 {msg.metrics.carbonG.toFixed(4)}g CO₂
@@ -890,17 +952,64 @@ const AIagentPage: React.FC<{ darkMode?: boolean; toggleDarkMode?: () => void }>
             )}
           </div>
 
-          {/* ── Right Panel — Reasoning + Green Metrics ── */}
+          {/* ── Right Panel — Doc Preview (when open) or Reasoning + Green Metrics ── */}
           {hasStartedChat && (
             <aside className="right-panel">
               <div className="right-panel-content" style={{ paddingTop: '12px' }}>
-                {/* NEW: pass real session and last-query metrics into the panel */}
-                <ReasoningPanel
-                  routedTo={activeRoutedTo}
-                  isTyping={isTyping}
-                  sessionMetrics={sessionMetrics}
-                  lastMetrics={lastAssistant?.metrics}
-                />
+                {previewCitation ? (
+                  <div className="doc-preview-panel">
+                    <div className="doc-preview-header">
+                      <span className="doc-preview-title">{previewCitation.title}</span>
+                      <button
+                        className="doc-preview-close"
+                        onClick={() => setPreviewCitation(null)}
+                        aria-label="Close preview"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                    <div className="doc-preview-body">
+                      {previewLoading ? (
+                        <p className="doc-preview-no-content">Loading document…</p>
+                      ) : previewCitation.excerpt ? (
+                        <>
+                          <div className="doc-preview-highlight">
+                            <span className="doc-preview-highlight-label">Cited section</span>
+                            <p className="doc-preview-excerpt">"{previewCitation.excerpt}…"</p>
+                          </div>
+                          {previewCitation.url && (
+                            <a
+                              href={previewCitation.url}
+                              target="_blank"
+                              rel="noreferrer noopener"
+                              className="doc-preview-open-btn"
+                            >
+                              Open full document ↗
+                            </a>
+                          )}
+                        </>
+                      ) : previewCitation.url ? (
+                        <a
+                          href={previewCitation.url}
+                          target="_blank"
+                          rel="noreferrer noopener"
+                          className="doc-preview-open-btn"
+                        >
+                          Open full document ↗
+                        </a>
+                      ) : (
+                        <p className="doc-preview-no-content">No preview available for this source.</p>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <ReasoningPanel
+                    routedTo={activeRoutedTo}
+                    isTyping={isTyping}
+                    sessionMetrics={sessionMetrics}
+                    lastMetrics={lastAssistant?.metrics}
+                  />
+                )}
               </div>
             </aside>
           )}
