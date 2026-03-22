@@ -28,7 +28,9 @@ class CreateRunRequest(BaseModel):
     query: str
     chat_history: list[ChatMessage] = Field(default_factory=list)
     max_reasoning_steps: int | None = None
-    session_id: str | None = None  # if provided, server loads + saves history automatically
+    session_id: str | None = (
+        None  # if provided, server loads + saves history automatically
+    )
 
 
 def get_iso_timestamp() -> str:
@@ -167,7 +169,11 @@ async def get_session(session_id: str):
     history = SESSION_STORE.get(session_id)
     if history is None:
         raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
-    return {"session_id": session_id, "history": history, "turn_count": len(history) // 2}
+    return {
+        "session_id": session_id,
+        "history": history,
+        "turn_count": len(history) // 2,
+    }
 
 
 @app.delete("/api/sessions/{session_id}")
