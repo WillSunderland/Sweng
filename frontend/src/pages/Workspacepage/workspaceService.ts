@@ -17,6 +17,8 @@ export interface RunItem {
   createdAt: string;
   updatedAt: string;
   carbonG: number;
+  latency_ms: number | null;   // ← add
+  tokens_used: number | null;  // ← add
   model_used: string | null;
   provider: string | null;
   sourceCount: number;

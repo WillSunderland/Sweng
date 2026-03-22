@@ -20,6 +20,13 @@ interface ParsedResponse {
   citations: Citation[];
 }
 
+// NEW: Green metrics captured per query from real backend values
+interface GreenMetrics {
+  carbonG: number;
+  tokensUsed: number;
+  latencyMs: number;
+}
+
 interface Message {
   id: number;
   type: 'user' | 'assistant' | 'error';
@@ -28,6 +35,7 @@ interface Message {
   time: string;
   runId?: string;
   routedTo?: string;
+  metrics?: GreenMetrics; // NEW: per-message real metrics
 }
 
 interface RetrievedDocument {
@@ -80,6 +88,15 @@ interface RunResult {
   references?: {
     sourceIds: string[];
   };
+  // NEW: real green metrics from backend
+  reasoningPath?: {
+    carbonTotalG?: number;
+    latencyMs?: number;
+    tokensUsed?: number;
+    trustScore?: number;
+    engine?: string;
+    steps?: unknown[];
+  };
 }
 
 interface SourceDetail {
@@ -108,233 +125,124 @@ const POLL_TIMEOUT_MS = 60_000;
 const nowStr = (): string =>
   new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
-/**
- * Aggressively strip ALL inline citation noise and HTML, then decode entities.
- * Handles: [*], [**], [^], [^1], [118-hr-8775_0], (*), (**), (^), "[*][*][^]", etc.
- */
 function cleanText(raw: string): string {
   if (!raw) return '';
   return raw
-    // Remove HTML tags
     .replace(/<\/?[a-zA-Z][^>]*>/g, ' ')
-    // Remove ALL bracket groups: [anything] — catches [*], [**], [^], [^1], [id], etc.
     .replace(/\[[^\]]*\]/g, '')
-    // Remove parenthetical noise markers: (*), (**), (^), (†), (1), etc.
     .replace(/\([*^†‡§¶\d]+\)/g, '')
-    // Remove stray asterisks (1 or more) that remain after bracket removal
     .replace(/\*+/g, '')
-    // Remove stray carets
     .replace(/\^+/g, '')
-    // Decode HTML entities
     .replace(/&amp;/g, '&')
     .replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>')
     .replace(/&nbsp;/g, ' ')
     .replace(/&quot;/g, '"')
     .replace(/&#39;/g, "'")
-    // Collapse multiple punctuation/spaces left behind
     .replace(/\.{2,}/g, '.')
     .replace(/\s{2,}/g, ' ')
     .trim();
 }
 
-/**
- * Build a congress.gov URL from a congressional bill ID.
- * Pattern:  {congress}-{type}-{number}  or  {congress}-{type}-{number}_{chunk}
- */
 function congressUrl(id: string): string | undefined {
   const base = id.replace(/_\d+$/, '');
   const match = base.match(/^(\d+)-(hr|s|hjres|sjres|hres|sres|hconres|sconres)-(\d+)$/i);
   if (!match) return undefined;
-
   const [, congress, typeRaw, number] = match;
   const typeMap: Record<string, string> = {
-    hr: 'house-bill',
-    s: 'senate-bill',
-    hjres: 'house-joint-resolution',
-    sjres: 'senate-joint-resolution',
-    hres: 'house-resolution',
-    sres: 'senate-resolution',
-    hconres: 'house-concurrent-resolution',
-    sconres: 'senate-concurrent-resolution',
+    hr: 'house-bill', s: 'senate-bill',
+    hjres: 'house-joint-resolution', sjres: 'senate-joint-resolution',
+    hres: 'house-resolution', sres: 'senate-resolution',
+    hconres: 'house-concurrent-resolution', sconres: 'senate-concurrent-resolution',
   };
   const billType = typeMap[typeRaw.toLowerCase()];
   if (!billType) return undefined;
   return `https://www.congress.gov/bill/${congress}th-congress/${billType}/${number}`;
 }
 
-/**
- * Resolve a URL from any available data about a source/document.
- */
 function resolveUrl(
-  id: string,
-  rawSource?: string,
-  billId?: string,
-  billType?: string,
-  billNumber?: string,
-  congress?: string,
+  id: string, rawSource?: string, billId?: string,
+  billType?: string, billNumber?: string, congress?: string,
 ): string | undefined {
-  
   if (rawSource && /^https?:\/\//.test(rawSource)) return rawSource;
-
-  if (billId) {
-    const fromBillId = congressUrl(billId);
-    if (fromBillId) return fromBillId;
-  }
-
+  if (billId) { const u = congressUrl(billId); if (u) return u; }
   if (billType && billNumber && congress) {
-    const synth = `${congress}-${billType}-${billNumber}`;
-    const fromFields = congressUrl(synth);
-    if (fromFields) return fromFields;
+    const u = congressUrl(`${congress}-${billType}-${billNumber}`);
+    if (u) return u;
   }
-
-  const fromId = congressUrl(id);
-  if (fromId) return fromId;
-
-  return undefined;
+  return congressUrl(id);
 }
 
-/**
- * Build a human-readable title from a bill ID.
- * "118-hr-8775_0" → "H.R. 8775 (118th Congress)"
- */
 function titleFromId(id: string): string {
   const base = id.replace(/_\d+$/, '');
   const match = base.match(/^(\d+)-(hr|s|hjres|sjres|hres|sres|hconres|sconres)-(\d+)$/i);
   if (!match) return id;
-
   const [, congress, typeRaw, number] = match;
   const labelMap: Record<string, string> = {
-    hr: `H.R. ${number}`,
-    s: `S. ${number}`,
-    hjres: `H.J.Res. ${number}`,
-    sjres: `S.J.Res. ${number}`,
-    hres: `H.Res. ${number}`,
-    sres: `S.Res. ${number}`,
-    hconres: `H.Con.Res. ${number}`,
-    sconres: `S.Con.Res. ${number}`,
+    hr: `H.R. ${number}`, s: `S. ${number}`,
+    hjres: `H.J.Res. ${number}`, sjres: `S.J.Res. ${number}`,
+    hres: `H.Res. ${number}`, sres: `S.Res. ${number}`,
+    hconres: `H.Con.Res. ${number}`, sconres: `S.Con.Res. ${number}`,
   };
-  const label = labelMap[typeRaw.toLowerCase()] ?? id;
-  return `${label} (${congress}th Congress)`;
+  return `${labelMap[typeRaw.toLowerCase()] ?? id} (${congress}th Congress)`;
 }
 
-/** Fetch full source details from the backend for a given sourceId */
 async function fetchSourceDetail(sourceId: string): Promise<SourceDetail | null> {
   try {
     const res = await fetch(`${BASE_URL}/api/sources/${sourceId}`);
     if (!res.ok) return null;
     return await res.json();
-  } catch {
-    return null;
-  }
+  } catch { return null; }
 }
 
-/** Build citations by fetching full source details from the backend */
 async function buildCitationsFromSourceIds(sourceIds: string[]): Promise<Citation[]> {
   const seen = new Set<string>();
   const citations: Citation[] = [];
-
   for (const id of sourceIds) {
     if (seen.has(id)) continue;
     seen.add(id);
-
     const detail = await fetchSourceDetail(id);
-
     const title = detail?.title || titleFromId(id);
     const excerpt = detail?.fullText ? cleanText(detail.fullText).slice(0, 220) : undefined;
-
-    const url = resolveUrl(
-      id,
-      undefined,
-      detail?.billId,
-      detail?.billType,
-      detail?.billNumber,
-      detail?.billId?.match(/^(\d+)-/)?.[1],
-    );
-
+    const url = resolveUrl(id, undefined, detail?.billId, detail?.billType, detail?.billNumber, detail?.billId?.match(/^(\d+)-/)?.[1]);
     citations.push({ id, title, url, excerpt });
   }
-
   return citations;
 }
 
-/** Build citations directly from embedded document objects */
 function buildCitationsFromDocs(docs: RetrievedDocument[]): Citation[] {
   const seen = new Set<string>();
-  return docs
-    .map((doc, i) => {
-      const id = doc.id ?? doc._id ?? doc.doc_id ?? String(i + 1);
-      if (seen.has(id)) return null;
-      seen.add(id);
-
-      const rawSource = doc.url ?? doc.source ?? doc.metadata?.url ?? doc.metadata?.source;
-
-      const title =
-        doc.title ??
-        doc.metadata?.title ??
-        titleFromId(id);
-
-      const url = resolveUrl(
-        id,
-        rawSource as string | undefined,
-        doc.bill_id,
-        doc.bill_type,
-        doc.bill_number,
-        doc.bill_id?.match(/^(\d+)-/)?.[1],
-      );
-
-      const rawExcerpt = doc.text ?? doc.content ?? doc.chunk_text ?? '';
-      const excerpt = cleanText(rawExcerpt).slice(0, 220) || undefined;
-
-      return { id, title, url, excerpt } as Citation;
-    })
-    .filter((c): c is Citation => c !== null);
+  return docs.map((doc, i) => {
+    const id = doc.id ?? doc._id ?? doc.doc_id ?? String(i + 1);
+    if (seen.has(id)) return null;
+    seen.add(id);
+    const rawSource = doc.url ?? doc.source ?? doc.metadata?.url ?? doc.metadata?.source;
+    const title = doc.title ?? doc.metadata?.title ?? titleFromId(id);
+    const url = resolveUrl(id, rawSource as string | undefined, doc.bill_id, doc.bill_type, doc.bill_number, doc.bill_id?.match(/^(\d+)-/)?.[1]);
+    const excerpt = cleanText(doc.text ?? doc.content ?? doc.chunk_text ?? '').slice(0, 220) || undefined;
+    return { id, title, url, excerpt } as Citation;
+  }).filter((c): c is Citation => c !== null);
 }
 
-/** Extract the main answer text from the run result. */
 function extractAnswer(run: RunResult): string {
   if (run.answer) return cleanText(run.answer);
-
   let text = cleanText(run.agentCommentary?.content ?? '');
   text = text.replace(/^Graph Result:\s*/i, '').trim();
-
   const msgMatch = text.match(/'messages':\s*\[([^\]]+)\]/);
-  if (msgMatch) {
-    text = msgMatch[1].replace(/'/g, '').split(',').map((s) => s.trim()).filter(Boolean).join(' ');
-  }
-
+  if (msgMatch) text = msgMatch[1].replace(/'/g, '').split(',').map((s) => s.trim()).filter(Boolean).join(' ');
   if (text && text !== 'No result yet') return text;
   return cleanText(run.keyFinding?.summary ?? '');
 }
 
-/** Full parser: run result → {summary, bullets, citations} */
 async function parseResponse(run: RunResult): Promise<ParsedResponse> {
   const text = extractAnswer(run);
-
-  if (!text) {
-    return {
-      summary: 'The analysis completed but did not produce a readable response.',
-      bullets: [],
-      citations: [],
-    };
-  }
-
-  const sentences = text
-    .split(/(?<=[.!?])\s+/)
-    .map((s) => s.trim())
-    .filter((s) => s.length > 0);
-
+  if (!text) return { summary: 'The analysis completed but did not produce a readable response.', bullets: [], citations: [] };
+  const sentences = text.split(/(?<=[.!?])\s+/).map((s) => s.trim()).filter((s) => s.length > 0);
   const summary = sentences[0] ?? text;
   const bullets = sentences.length > 1 ? sentences.slice(1) : [];
-
   let citations: Citation[] = [];
-
-  if (run.documents && run.documents.length > 0) {
-    citations = buildCitationsFromDocs(run.documents);
-  } else if (run.references?.sourceIds && run.references.sourceIds.length > 0) {
-    citations = await buildCitationsFromSourceIds(run.references.sourceIds);
-  }
-
+  if (run.documents && run.documents.length > 0) citations = buildCitationsFromDocs(run.documents);
+  else if (run.references?.sourceIds?.length) citations = await buildCitationsFromSourceIds(run.references.sourceIds);
   return { summary, bullets, citations };
 }
 
@@ -362,9 +270,7 @@ async function pollRun(runId: string): Promise<RunResult> {
 }
 
 function guessRoute(query: string, run?: RunResult): 'nvidia' | 'huggingface' {
-  if (run?.provider_used) {
-    return run.provider_used.toLowerCase().includes('nvidia') ? 'nvidia' : 'huggingface';
-  }
+  if (run?.provider_used) return run.provider_used.toLowerCase().includes('nvidia') ? 'nvidia' : 'huggingface';
   const complex = ['compare', 'analyse', 'analyze', 'draft', 'summarize', 'cross-reference'];
   return complex.some((k) => query.toLowerCase().includes(k)) ? 'nvidia' : 'huggingface';
 }
@@ -373,17 +279,14 @@ function guessRoute(query: string, run?: RunResult): 'nvidia' | 'huggingface' {
 
 const FormattedResponse: React.FC<{ parsed: ParsedResponse }> = ({ parsed }) => {
   const [expandedId, setExpandedId] = useState<string | null>(null);
-
   return (
     <div className="formatted-response">
       <p className="response-summary">{parsed.summary}</p>
-
       {parsed.bullets.length > 0 && (
         <ul className="response-bullets">
           {parsed.bullets.map((b, i) => <li key={i}>{b}</li>)}
         </ul>
       )}
-
       {parsed.citations.length > 0 && (
         <div className="response-citations">
           <p className="citations-label">📎 Sources</p>
@@ -392,36 +295,18 @@ const FormattedResponse: React.FC<{ parsed: ParsedResponse }> = ({ parsed }) => 
               <div key={c.id} className="citation-item">
                 <div className="citation-row">
                   {c.excerpt && (
-                    <button
-                      className="citation-chevron-btn"
-                      onClick={() => setExpandedId(expandedId === c.id ? null : c.id)}
-                      aria-label="Toggle excerpt"
-                    >
+                    <button className="citation-chevron-btn" onClick={() => setExpandedId(expandedId === c.id ? null : c.id)} aria-label="Toggle excerpt">
                       {expandedId === c.id ? '▼' : '▶'}
                     </button>
                   )}
-
                   <span className="citation-id">[{c.id}]</span>
                   <span className="citation-title">{c.title}</span>
-
-                  {c.url ? (
-                    <a
-                      href={c.url}
-                      target="_blank"
-                      rel="noreferrer noopener"
-                      className="citation-open-btn"
-                      title={`Open: ${c.url}`}
-                    >
-                      Open ↗
-                    </a>
-                  ) : (
-                    <span className="citation-no-link">No link</span>
-                  )}
+                  {c.url
+                    ? <a href={c.url} target="_blank" rel="noreferrer noopener" className="citation-open-btn" title={`Open: ${c.url}`}>Open ↗</a>
+                    : <span className="citation-no-link">No link</span>
+                  }
                 </div>
-
-                {expandedId === c.id && c.excerpt && (
-                  <p className="citation-excerpt">"{c.excerpt}…"</p>
-                )}
+                {expandedId === c.id && c.excerpt && <p className="citation-excerpt">"{c.excerpt}…"</p>}
               </div>
             ))}
           </div>
@@ -431,115 +316,43 @@ const FormattedResponse: React.FC<{ parsed: ParsedResponse }> = ({ parsed }) => 
   );
 };
 
-// ─── Research Tasks (Empty State) ────────────────────────────────────────────
+// ─── Research Tasks ───────────────────────────────────────────────────────────
 
-interface ResearchTask {
-  icon: 'regulatory' | 'compliance' | 'research' | 'contract';
-  title: string;
-  description: string;
-  query: string;
-}
+interface ResearchTask { icon: 'regulatory' | 'compliance' | 'research' | 'contract'; title: string; description: string; query: string; }
 
 const RESEARCH_TASKS: ResearchTask[] = [
-  {
-    icon: 'regulatory',
-    title: 'Regulatory Analysis',
-    description: 'Review legislative changes and impact assessments.',
-    query: 'Perform a regulatory analysis on recent legislative changes and their impact assessments',
-  },
-  {
-    icon: 'compliance',
-    title: 'Compliance Check',
-    description: 'Generate documentation and verification checklists.',
-    query: 'Generate a compliance check with documentation and verification checklists',
-  },
-  {
-    icon: 'research',
-    title: 'Case Research',
-    description: 'Find legal precedents and court rulings across jurisdictions.',
-    query: 'Find legal precedents and court rulings across jurisdictions for case research',
-  },
-  {
-    icon: 'contract',
-    title: 'Contract Review',
-    description: 'Analyze, revise, and detect anomalies in legal agreements.',
-    query: 'Analyze and review legal agreements to detect anomalies and suggest revisions',
-  },
+  { icon: 'regulatory', title: 'Regulatory Analysis', description: 'Review legislative changes and impact assessments.', query: 'Perform a regulatory analysis on recent legislative changes and their impact assessments' },
+  { icon: 'compliance', title: 'Compliance Check', description: 'Generate documentation and verification checklists.', query: 'Generate a compliance check with documentation and verification checklists' },
+  { icon: 'research', title: 'Case Research', description: 'Find legal precedents and court rulings across jurisdictions.', query: 'Find legal precedents and court rulings across jurisdictions for case research' },
+  { icon: 'contract', title: 'Contract Review', description: 'Analyze, revise, and detect anomalies in legal agreements.', query: 'Analyze and review legal agreements to detect anomalies and suggest revisions' },
 ];
 
 const TaskIcon: React.FC<{ type: ResearchTask['icon'] }> = ({ type }) => {
   const icons: Record<string, React.ReactNode> = {
-    regulatory: (
-      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#2563eb" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M3 6h18M3 12h18M3 18h18" />
-        <path d="M3 6c2 2 4-2 6 0s4-2 6 0s4-2 6 0" />
-      </svg>
-    ),
-    compliance: (
-      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#2563eb" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M9 12l2 2 4-4" />
-        <path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z" />
-      </svg>
-    ),
-    research: (
-      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#2563eb" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M12 3L2 8l10 5 10-5-10-5z" />
-        <path d="M2 8v8l10 5 10-5V8" />
-        <path d="M12 13v9" />
-      </svg>
-    ),
-    contract: (
-      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#2563eb" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-        <polyline points="14 2 14 8 20 8" />
-        <line x1="16" y1="13" x2="8" y2="13" />
-        <line x1="16" y1="17" x2="8" y2="17" />
-      </svg>
-    ),
+    regulatory: (<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#2563eb" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18M3 12h18M3 18h18" /><path d="M3 6c2 2 4-2 6 0s4-2 6 0s4-2 6 0" /></svg>),
+    compliance: (<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#2563eb" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 12l2 2 4-4" /><path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z" /></svg>),
+    research: (<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#2563eb" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3L2 8l10 5 10-5-10-5z" /><path d="M2 8v8l10 5 10-5V8" /><path d="M12 13v9" /></svg>),
+    contract: (<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#2563eb" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /></svg>),
   };
   return <div className="task-icon-svg">{icons[type]}</div>;
 };
 
 // ─── Reasoning Panel ──────────────────────────────────────────────────────────
 
-interface ReasoningStep {
-  label: string;
-  description: string;
-  status: 'done' | 'active' | 'pending';
-  time?: string;
-  tags?: string[];
-  resultCount?: string;
-  progress?: number;
-}
+interface ReasoningStep { label: string; description: string; status: 'done' | 'active' | 'pending'; time?: string; tags?: string[]; resultCount?: string; progress?: number; }
 
-const ReasoningPanel: React.FC<{ routedTo?: string; isTyping?: boolean }> = ({ routedTo, isTyping }) => {
+// NEW: accepts real session and last-query metrics
+const ReasoningPanel: React.FC<{
+  routedTo?: string;
+  isTyping?: boolean;
+  sessionMetrics?: { totalCarbonG: number; totalTokens: number; queryCount: number };
+  lastMetrics?: GreenMetrics;
+}> = ({ routedTo, isTyping, sessionMetrics, lastMetrics }) => {
   const steps: ReasoningStep[] = [
-    {
-      label: 'Semantic Search',
-      description: 'Indexed legislative documents for relevant provisions.',
-      status: isTyping ? 'active' : 'done',
-      time: nowStr(),
-      tags: ['VectorDB', 'Hybrid Search'],
-    },
-    {
-      label: 'Jurisdiction Filtering',
-      description: 'Applied multi-layer filter for applicable jurisdiction.',
-      status: isTyping ? 'pending' : 'done',
-      time: nowStr(),
-      resultCount: '12 RESULTS',
-    },
-    {
-      label: 'Cross-Reference Mapping',
-      description: 'Analyzing dependency graphs between sections.',
-      status: isTyping ? 'pending' : 'done',
-      time: nowStr(),
-      progress: isTyping ? 65 : 100,
-    },
-    {
-      label: 'Conclusion Synthesis',
-      description: isTyping ? 'Waiting for graph completion.' : 'Final analysis generated.',
-      status: isTyping ? 'pending' : 'done',
-    },
+    { label: 'Semantic Search', description: 'Indexed legislative documents for relevant provisions.', status: isTyping ? 'active' : 'done', time: nowStr(), tags: ['VectorDB', 'Hybrid Search'] },
+    { label: 'Jurisdiction Filtering', description: 'Applied multi-layer filter for applicable jurisdiction.', status: isTyping ? 'pending' : 'done', time: nowStr(), resultCount: '12 RESULTS' },
+    { label: 'Cross-Reference Mapping', description: 'Analyzing dependency graphs between sections.', status: isTyping ? 'pending' : 'done', time: nowStr(), progress: isTyping ? 65 : 100 },
+    { label: 'Conclusion Synthesis', description: isTyping ? 'Waiting for graph completion.' : 'Final analysis generated.', status: isTyping ? 'pending' : 'done' },
   ];
 
   return (
@@ -554,20 +367,11 @@ const ReasoningPanel: React.FC<{ routedTo?: string; isTyping?: boolean }> = ({ r
           <div key={i} className={`rpanel-step status-${step.status}`}>
             <div className="rpanel-step-dot">
               {step.status === 'done' ? (
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-                  <circle cx="12" cy="12" r="12" fill="#10b981" />
-                  <path d="M7 13l3 3 7-7" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="12" fill="#10b981" /><path d="M7 13l3 3 7-7" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
               ) : step.status === 'active' ? (
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-                  <circle cx="12" cy="12" r="12" fill="#2563eb" />
-                  <circle cx="12" cy="12" r="4" fill="white" />
-                </svg>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="12" fill="#2563eb" /><circle cx="12" cy="12" r="4" fill="white" /></svg>
               ) : (
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-                  <circle cx="12" cy="12" r="11" stroke="#d1d5db" strokeWidth="2" />
-                  <circle cx="12" cy="12" r="4" fill="#d1d5db" />
-                </svg>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="11" stroke="#d1d5db" strokeWidth="2" /><circle cx="12" cy="12" r="4" fill="#d1d5db" /></svg>
               )}
               {i < steps.length - 1 && <div className={`rpanel-line ${step.status === 'done' ? 'done' : ''}`} />}
             </div>
@@ -578,19 +382,11 @@ const ReasoningPanel: React.FC<{ routedTo?: string; isTyping?: boolean }> = ({ r
                 {step.time && step.status === 'done' && <span className="rpanel-step-time">{step.time}</span>}
               </div>
               <p className="rpanel-step-desc">{step.description}</p>
-              {step.tags && (
-                <div className="rpanel-tags">
-                  {step.tags.map((t) => <span key={t} className="rpanel-tag">{t}</span>)}
-                </div>
-              )}
-              {step.resultCount && step.status === 'done' && (
-                <span className="rpanel-result-count">{step.resultCount}</span>
-              )}
+              {step.tags && <div className="rpanel-tags">{step.tags.map((t) => <span key={t} className="rpanel-tag">{t}</span>)}</div>}
+              {step.resultCount && step.status === 'done' && <span className="rpanel-result-count">{step.resultCount}</span>}
               {step.progress !== undefined && step.status === 'active' && (
                 <div className="rpanel-progress-wrap">
-                  <div className="rpanel-progress-bar">
-                    <div className="rpanel-progress-fill" style={{ width: `${step.progress}%` }} />
-                  </div>
+                  <div className="rpanel-progress-bar"><div className="rpanel-progress-fill" style={{ width: `${step.progress}%` }} /></div>
                   <span className="rpanel-progress-pct">{step.progress}%</span>
                 </div>
               )}
@@ -602,10 +398,7 @@ const ReasoningPanel: React.FC<{ routedTo?: string; isTyping?: boolean }> = ({ r
       <div className="trust-score-card">
         <div className="trust-score-header">
           <span className="trust-label">TRUST SCORE</span>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-            <circle cx="12" cy="12" r="10" fill="#10b981" />
-            <path d="M9 12l2 2 4-4" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" fill="#10b981" /><path d="M9 12l2 2 4-4" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
         </div>
         <div className="trust-score-value">
           <span className="trust-number">98.4</span>
@@ -614,9 +407,55 @@ const ReasoningPanel: React.FC<{ routedTo?: string; isTyping?: boolean }> = ({ r
         <p className="trust-desc">Verified against official legal statute datasets.</p>
       </div>
 
+      {/* ── Green Metrics Stats — real backend values ── */}
       <div className="rpanel-stats">
-        <div className="rpanel-stat-row"><span>Sources Analyzed</span><strong>12</strong></div>
-        <div className="rpanel-stat-row"><span>Carbon Footprint</span><strong>0.3g CO₂</strong></div>
+        {(!sessionMetrics || sessionMetrics.queryCount === 0) ? (
+          <div className="rpanel-green-empty">
+            <span>🌿</span>
+            <span>Carbon metrics will appear after your first query.</span>
+          </div>
+        ) : (
+          <>
+            <div className="rpanel-stats-section-label">LAST QUERY</div>
+            <div className="rpanel-stat-row">
+              <span>CO₂ Footprint</span>
+              <strong className="rpanel-green-value">
+                {lastMetrics && lastMetrics.carbonG > 0 ? `${lastMetrics.carbonG.toFixed(4)}g` : '0.0000g'}
+              </strong>
+            </div>
+            <div className="rpanel-stat-row">
+              <span>Tokens Used</span>
+              <strong>{lastMetrics && lastMetrics.tokensUsed > 0 ? lastMetrics.tokensUsed.toLocaleString() : '0'}</strong>
+            </div>
+            <div className="rpanel-stat-row">
+              <span>Latency</span>
+              <strong>{lastMetrics && lastMetrics.latencyMs > 0 ? `${(lastMetrics.latencyMs / 1000).toFixed(1)}s` : '0.0s'}</strong>
+            </div>
+
+            <div className="rpanel-stats-divider" />
+            <div className="rpanel-stats-section-label">THIS SESSION</div>
+            <div className="rpanel-stat-row">
+              <span>Total CO₂</span>
+              <strong className="rpanel-green-value">{sessionMetrics.totalCarbonG.toFixed(4)}g</strong>
+            </div>
+            <div className="rpanel-stat-row">
+              <span>Total Tokens</span>
+              <strong>{sessionMetrics.totalTokens.toLocaleString()}</strong>
+            </div>
+            <div className="rpanel-stat-row">
+              <span>Queries Run</span>
+              <strong>{sessionMetrics.queryCount}</strong>
+            </div>
+            <div className="rpanel-carbon-context">
+              <span className="rpanel-carbon-leaf">🌿</span>
+              <span>
+                {sessionMetrics.totalCarbonG < 1
+                  ? `${sessionMetrics.totalCarbonG.toFixed(4)}g CO₂ — less than driving 1 metre`
+                  : `${sessionMetrics.totalCarbonG.toFixed(2)}g CO₂ this session`}
+              </span>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );
@@ -628,33 +467,29 @@ const AIagentPage: React.FC<{ darkMode?: boolean; toggleDarkMode?: () => void }>
   const navigate = useNavigate();
 
   const [messages, setMessages] = useState<Message[]>([
-    {
-      id: 1,
-      type: 'assistant',
-      text: "Hello, I'm your AI Legal Assistant. How can I help you today?",
-      time: nowStr(),
-    },
+    { id: 1, type: 'assistant', text: "Hello, I'm your AI Legal Assistant. How can I help you today?", time: nowStr() },
   ]);
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
 
+  // NEW: session-level cumulative green metrics
+  const [sessionMetrics, setSessionMetrics] = useState({
+    totalCarbonG: 0,
+    totalTokens: 0,
+    queryCount: 0,
+  });
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, isTyping]);
-
+  useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages, isTyping]);
   useEffect(() => { inputRef.current?.focus(); }, []);
 
   const handleSend = useCallback(async (text?: string): Promise<void> => {
     const messageText = (text ?? input).trim();
     if (!messageText || isTyping) return;
 
-    setMessages((prev) => [
-      ...prev,
-      { id: Date.now(), type: 'user', text: messageText, time: nowStr() },
-    ]);
+    setMessages((prev) => [...prev, { id: Date.now(), type: 'user', text: messageText, time: nowStr() }]);
     setInput('');
     setIsTyping(true);
 
@@ -663,6 +498,20 @@ const AIagentPage: React.FC<{ darkMode?: boolean; toggleDarkMode?: () => void }>
       const run = await pollRun(runId);
       const parsed = await parseResponse(run);
       const routedTo = guessRoute(messageText, run);
+
+      // NEW: extract real green metrics from backend reasoningPath
+      const metrics: GreenMetrics = {
+        carbonG: run.reasoningPath?.carbonTotalG ?? 0,
+        tokensUsed: run.reasoningPath?.tokensUsed ?? 0,
+        latencyMs: run.reasoningPath?.latencyMs ?? 0,
+      };
+
+      // NEW: accumulate into session totals
+      setSessionMetrics((prev) => ({
+        totalCarbonG: prev.totalCarbonG + metrics.carbonG,
+        totalTokens: prev.totalTokens + metrics.tokensUsed,
+        queryCount: prev.queryCount + 1,
+      }));
 
       setMessages((prev) => [
         ...prev,
@@ -674,24 +523,19 @@ const AIagentPage: React.FC<{ darkMode?: boolean; toggleDarkMode?: () => void }>
           time: nowStr(),
           runId,
           routedTo,
+          metrics, // NEW: attach metrics to message for per-query badge
         },
       ]);
     } catch (err: unknown) {
       const errorMsg = err instanceof Error ? err.message : 'An unexpected error occurred.';
-      setMessages((prev) => [
-        ...prev,
-        { id: Date.now(), type: 'error', text: `⚠ ${errorMsg}`, time: nowStr() },
-      ]);
+      setMessages((prev) => [...prev, { id: Date.now(), type: 'error', text: `⚠ ${errorMsg}`, time: nowStr() }]);
     } finally {
       setIsTyping(false);
     }
   }, [input, isTyping]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>): void => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      handleSend();
-    }
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); }
   };
 
   const lastAssistant = [...messages].reverse().find((m) => m.type === 'assistant' && m.parsed);
@@ -700,7 +544,7 @@ const AIagentPage: React.FC<{ darkMode?: boolean; toggleDarkMode?: () => void }>
 
   return (
     <div className="ai-agent-page">
-      {/* ─── Left Sidebar ──────────────────────────────────────────────── */}
+      {/* ─── Left Sidebar ── */}
       <aside className="ai-sidebar">
         <div className="sidebar-top">
           <div className="sidebar-logo-area">
@@ -726,23 +570,20 @@ const AIagentPage: React.FC<{ darkMode?: boolean; toggleDarkMode?: () => void }>
               </NavLink>
               <div className="sidebar-nav-item">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                  <polyline points="14 2 14 8 20 8" />
+                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" />
                 </svg>
                 <span>Drafts</span>
               </div>
               <div className="sidebar-nav-item">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-                  <circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" />
-                  <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+                  <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" />
+                  <path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" />
                 </svg>
                 <span>Shared with Team</span>
               </div>
               <NavLink to="/history" className={({ isActive }) => `sidebar-nav-item${isActive ? ' active' : ''}`}>
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M21 8v13H3V8" /><path d="M1 3h22v5H1z" />
-                  <path d="M10 12h4" />
+                  <path d="M21 8v13H3V8" /><path d="M1 3h22v5H1z" /><path d="M10 12h4" />
                 </svg>
                 <span>Archive</span>
               </NavLink>
@@ -760,8 +601,7 @@ const AIagentPage: React.FC<{ darkMode?: boolean; toggleDarkMode?: () => void }>
               </div>
               <NavLink to="/ai-agent" className={({ isActive }) => `sidebar-nav-item${isActive ? ' active' : ''}`}>
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M12 2a4 4 0 0 1 4 4v2H8V6a4 4 0 0 1 4-4z" />
-                  <rect x="4" y="8" width="16" height="12" rx="2" />
+                  <path d="M12 2a4 4 0 0 1 4 4v2H8V6a4 4 0 0 1 4-4z" /><rect x="4" y="8" width="16" height="12" rx="2" />
                   <circle cx="9" cy="14" r="1" fill="currentColor" /><circle cx="15" cy="14" r="1" fill="currentColor" />
                 </svg>
                 <span>AI Assistant</span>
@@ -778,32 +618,15 @@ const AIagentPage: React.FC<{ darkMode?: boolean; toggleDarkMode?: () => void }>
             New Research Case
           </button>
           {toggleDarkMode && (
-  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 4px' }}>
-    <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-      {darkMode ? 'Dark Mode' : 'Light Mode'}
-    </span>
-    <button
-      onClick={toggleDarkMode}
-      style={{
-        width: '44px', height: '24px', borderRadius: '999px',
-        border: 'none', cursor: 'pointer', padding: 0,
-        background: darkMode ? '#3b82f6' : '#e2e8f0',
-        transition: 'background 0.3s ease',
-        display: 'flex', alignItems: 'center',
-      }}
-    >
-      <span className="toggle-thumb" style={{
-  width: '18px', height: '18px', borderRadius: '50%',
-  background: 'white', display: 'flex', alignItems: 'center',
-  justifyContent: 'center', overflow: 'hidden',
-  transform: darkMode ? 'translateX(22px)' : 'translateX(3px)',
-  boxShadow: '0 1px 4px rgba(0,0,0,0.2)',
-}}>
-  <img src={darkMode ? moonIcon : sunIcon} width="12" height="12" style={{ objectFit: 'contain' }} />
-</span>
-    </button>
-  </div>
-  )}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 4px' }}>
+              <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{darkMode ? 'Dark Mode' : 'Light Mode'}</span>
+              <button onClick={toggleDarkMode} style={{ width: '44px', height: '24px', borderRadius: '999px', border: 'none', cursor: 'pointer', padding: 0, background: darkMode ? '#3b82f6' : '#e2e8f0', transition: 'background 0.3s ease', display: 'flex', alignItems: 'center' }}>
+                <span className="toggle-thumb" style={{ width: '18px', height: '18px', borderRadius: '50%', background: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', transform: darkMode ? 'translateX(22px)' : 'translateX(3px)', boxShadow: '0 1px 4px rgba(0,0,0,0.2)' }}>
+                  <img src={darkMode ? moonIcon : sunIcon} width="12" height="12" style={{ objectFit: 'contain' }} />
+                </span>
+              </button>
+            </div>
+          )}
           <div className="sidebar-user">
             <div className="sidebar-user-avatar">
               <img src="https://ui-avatars.com/api/?name=James+Sterling&background=e2e8f0&color=475569&size=36&font-size=0.4&bold=true" alt="JS" />
@@ -816,7 +639,7 @@ const AIagentPage: React.FC<{ darkMode?: boolean; toggleDarkMode?: () => void }>
         </div>
       </aside>
 
-      {/* ─── Main Content ──────────────────────────────────────────────── */}
+      {/* ─── Main Content ── */}
       <div className="ai-main-content">
         {hasStartedChat && (
           <header className="chat-header-bar">
@@ -836,6 +659,16 @@ const AIagentPage: React.FC<{ darkMode?: boolean; toggleDarkMode?: () => void }>
                 </svg>
                 <span>Trust Score 98%</span>
               </div>
+              {/* NEW: live session CO₂ in header once queries run */}
+              {sessionMetrics.queryCount > 0 && (
+                <div className="header-badge header-badge-green">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="2.5">
+                    <path d="M12 2C6 2 2 8 2 12c0 5.5 4.5 10 10 10s10-4.5 10-10c0-1-.2-2-.5-3" />
+                    <path d="M12 6v6l4 2" stroke="#10b981" strokeWidth="2" strokeLinecap="round" />
+                  </svg>
+                  <span>🌿 {sessionMetrics.totalCarbonG.toFixed(4)}g CO₂ session</span>
+                </div>
+              )}
               <div className="header-badge">
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="2.5">
                   <circle cx="12" cy="12" r="10" /><path d="M9 12l2 2 4-4" />
@@ -853,7 +686,7 @@ const AIagentPage: React.FC<{ darkMode?: boolean; toggleDarkMode?: () => void }>
         )}
 
         <div className="ai-content-body">
-          {/* ── Chat Column ─────────────────────────────────────────────── */}
+          {/* ── Chat Column ── */}
           <div className="chat-column">
             {hasStartedChat && (
               <main className="chat-area">
@@ -867,8 +700,7 @@ const AIagentPage: React.FC<{ darkMode?: boolean; toggleDarkMode?: () => void }>
                       {(msg.type === 'assistant' || msg.type === 'error') && (
                         <div className="msg-avatar assistant-avatar">
                           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                            <circle cx="12" cy="8" r="4" />
-                            <path d="M6 20v-2a6 6 0 0 1 12 0v2" />
+                            <circle cx="12" cy="8" r="4" /><path d="M6 20v-2a6 6 0 0 1 12 0v2" />
                           </svg>
                         </div>
                       )}
@@ -879,6 +711,7 @@ const AIagentPage: React.FC<{ darkMode?: boolean; toggleDarkMode?: () => void }>
                             ? <FormattedResponse parsed={msg.parsed} />
                             : msg.text}
                         </div>
+
                         <div className="message-meta">
                           <span className="message-time">
                             {msg.type === 'assistant' ? 'AI Assistant' : 'Legal Counsel'} · {msg.time}
@@ -893,12 +726,21 @@ const AIagentPage: React.FC<{ darkMode?: boolean; toggleDarkMode?: () => void }>
                               {msg.runId.slice(0, 18)}…
                             </span>
                           )}
+                          {/* NEW: per-query green metrics badge — only shows real non-zero values */}
+                          {msg.metrics && (msg.metrics.carbonG > 0 || msg.metrics.tokensUsed > 0) && (
+                            <span className="green-metrics-badge" title="Green computing metrics for this query">
+                              🌿 {msg.metrics.carbonG.toFixed(4)}g CO₂
+                              &nbsp;·&nbsp;
+                              🔢 {msg.metrics.tokensUsed.toLocaleString()} tok
+                              {msg.metrics.latencyMs > 0 && (
+                                <>&nbsp;·&nbsp;⏱ {(msg.metrics.latencyMs / 1000).toFixed(1)}s</>
+                              )}
+                            </span>
+                          )}
                         </div>
                       </div>
 
-                      {msg.type === 'user' && (
-                        <div className="msg-avatar user-avatar">You</div>
-                      )}
+                      {msg.type === 'user' && <div className="msg-avatar user-avatar">You</div>}
                     </div>
                   ))}
 
@@ -906,20 +748,16 @@ const AIagentPage: React.FC<{ darkMode?: boolean; toggleDarkMode?: () => void }>
                     <div className="message-row assistant">
                       <div className="msg-avatar assistant-avatar">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                          <circle cx="12" cy="8" r="4" />
-                          <path d="M6 20v-2a6 6 0 0 1 12 0v2" />
+                          <circle cx="12" cy="8" r="4" /><path d="M6 20v-2a6 6 0 0 1 12 0v2" />
                         </svg>
                       </div>
                       <div className="message-content">
                         <div className="message-bubble assistant typing-bubble">
-                          <span className="typing-dot" />
-                          <span className="typing-dot" />
-                          <span className="typing-dot" />
+                          <span className="typing-dot" /><span className="typing-dot" /><span className="typing-dot" />
                         </div>
                       </div>
                     </div>
                   )}
-
                   <div ref={messagesEndRef} />
                 </div>
 
@@ -936,22 +774,14 @@ const AIagentPage: React.FC<{ darkMode?: boolean; toggleDarkMode?: () => void }>
                       disabled={isTyping}
                       rows={1}
                     />
-                    <button
-                      className={`send-btn ${input.trim() && !isTyping ? 'active' : ''}`}
-                      onClick={() => handleSend()}
-                      disabled={!input.trim() || isTyping}
-                      aria-label="Send message"
-                    >
+                    <button className={`send-btn ${input.trim() && !isTyping ? 'active' : ''}`} onClick={() => handleSend()} disabled={!input.trim() || isTyping} aria-label="Send message">
                       {isTyping ? (
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-                          <circle cx="12" cy="12" r="9" />
-                          <line x1="9" y1="9" x2="15" y2="9" />
-                          <line x1="9" y1="15" x2="15" y2="15" />
+                          <circle cx="12" cy="12" r="9" /><line x1="9" y1="9" x2="15" y2="9" /><line x1="9" y1="15" x2="15" y2="15" />
                         </svg>
                       ) : (
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                          <line x1="22" y1="2" x2="11" y2="13" />
-                          <polygon points="22 2 15 22 11 13 2 9 22 2" />
+                          <line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" />
                         </svg>
                       )}
                     </button>
@@ -970,20 +800,17 @@ const AIagentPage: React.FC<{ darkMode?: boolean; toggleDarkMode?: () => void }>
                       </button>
                       <button className="input-tool-btn" title="Voice input" aria-label="Voice input">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                          <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" /><path d="M19 10v2a7 7 0 0 1-14 0v-2" /><line x1="12" y1="19" x2="12" y2="23" /><line x1="8" y1="23" x2="16" y2="23" />
+                          <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" /><path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                          <line x1="12" y1="19" x2="12" y2="23" /><line x1="8" y1="23" x2="16" y2="23" />
                         </svg>
                       </button>
                       <div className="model-indicator">
-                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none">
-                          <circle cx="12" cy="12" r="10" fill="#10b981" />
-                        </svg>
+                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" fill="#10b981" /></svg>
                         GPT-4 LEGAL MODEL ACTIVE
                       </div>
                     </div>
                   </div>
-                  <p className="input-disclaimer">
-                    Propylon AI can make mistakes. Check important information before finalizing legal documents.
-                  </p>
+                  <p className="input-disclaimer">Propylon AI can make mistakes. Check important information before finalizing legal documents.</p>
                 </div>
               </main>
             )}
@@ -993,25 +820,17 @@ const AIagentPage: React.FC<{ darkMode?: boolean; toggleDarkMode?: () => void }>
                 <div className="welcome-hero">
                   <div className="welcome-icon-wrap">
                     <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#2563eb" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M12 3L2 8l10 5 10-5-10-5z" />
-                      <path d="M2 8v8l10 5 10-5V8" />
-                      <path d="M12 13v9" />
+                      <path d="M12 3L2 8l10 5 10-5-10-5z" /><path d="M2 8v8l10 5 10-5V8" /><path d="M12 13v9" />
                     </svg>
                   </div>
                   <h1 className="welcome-title">Hi James, Where should we start?</h1>
                   <p className="welcome-subtitle">Select a task or type a query to begin your legal research.</p>
                 </div>
-
                 <div className="welcome-tasks-section">
                   <div className="welcome-tasks-label">SUGGESTED RESEARCH TASKS</div>
                   <div className="research-tasks-grid">
                     {RESEARCH_TASKS.map((task, i) => (
-                      <button
-                        key={i}
-                        className="research-task-card"
-                        onClick={() => handleSend(task.query)}
-                        disabled={isTyping}
-                      >
+                      <button key={i} className="research-task-card" onClick={() => handleSend(task.query)} disabled={isTyping}>
                         <TaskIcon type={task.icon} />
                         <h3 className="task-card-title">{task.title}</h3>
                         <p className="task-card-desc">{task.description}</p>
@@ -1036,15 +855,9 @@ const AIagentPage: React.FC<{ darkMode?: boolean; toggleDarkMode?: () => void }>
                     disabled={isTyping}
                     rows={1}
                   />
-                  <button
-                    className={`send-btn ${input.trim() && !isTyping ? 'active' : ''}`}
-                    onClick={() => handleSend()}
-                    disabled={!input.trim() || isTyping}
-                    aria-label="Send message"
-                  >
+                  <button className={`send-btn ${input.trim() && !isTyping ? 'active' : ''}`} onClick={() => handleSend()} disabled={!input.trim() || isTyping} aria-label="Send message">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                      <line x1="22" y1="2" x2="11" y2="13" />
-                      <polygon points="22 2 15 22 11 13 2 9 22 2" />
+                      <line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" />
                     </svg>
                   </button>
                 </div>
@@ -1062,29 +875,32 @@ const AIagentPage: React.FC<{ darkMode?: boolean; toggleDarkMode?: () => void }>
                     </button>
                     <button className="input-tool-btn" title="Voice input" aria-label="Voice input">
                       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" /><path d="M19 10v2a7 7 0 0 1-14 0v-2" /><line x1="12" y1="19" x2="12" y2="23" /><line x1="8" y1="23" x2="16" y2="23" />
+                        <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" /><path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                        <line x1="12" y1="19" x2="12" y2="23" /><line x1="8" y1="23" x2="16" y2="23" />
                       </svg>
                     </button>
                     <div className="model-indicator">
-                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none">
-                        <circle cx="12" cy="12" r="10" fill="#10b981" />
-                      </svg>
+                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" fill="#10b981" /></svg>
                       GPT-4 LEGAL MODEL ACTIVE
                     </div>
                   </div>
                 </div>
-                <p className="input-disclaimer">
-                  Propylon AI can make mistakes. Check important information before finalizing legal documents.
-                </p>
+                <p className="input-disclaimer">Propylon AI can make mistakes. Check important information before finalizing legal documents.</p>
               </div>
             )}
           </div>
 
-          {/* ── Right Panel — Reasoning ────────────────────────────────── */}
+          {/* ── Right Panel — Reasoning + Green Metrics ── */}
           {hasStartedChat && (
             <aside className="right-panel">
               <div className="right-panel-content" style={{ paddingTop: '12px' }}>
-                <ReasoningPanel routedTo={activeRoutedTo} isTyping={isTyping} />
+                {/* NEW: pass real session and last-query metrics into the panel */}
+                <ReasoningPanel
+                  routedTo={activeRoutedTo}
+                  isTyping={isTyping}
+                  sessionMetrics={sessionMetrics}
+                  lastMetrics={lastAssistant?.metrics}
+                />
               </div>
             </aside>
           )}
