@@ -20,6 +20,13 @@ interface ParsedResponse {
   citations: Citation[];
 }
 
+// Green metrics captured per query from real backend values
+interface GreenMetrics {
+  carbonG: number;
+  tokensUsed: number;
+  latencyMs: number;
+}
+
 interface Message {
   id: number;
   type: 'user' | 'assistant' | 'error';
@@ -28,6 +35,7 @@ interface Message {
   time: string;
   runId?: string;
   routedTo?: string;
+  metrics?: GreenMetrics;
 }
 
 interface RetrievedDocument {
@@ -80,6 +88,15 @@ interface RunResult {
   references?: {
     sourceIds: string[];
   };
+  // Real green metrics from backend
+  reasoningPath?: {
+    carbonTotalG?: number;
+    latencyMs?: number;
+    tokensUsed?: number;
+    trustScore?: number;
+    engine?: string;
+    steps?: unknown[];
+  };
 }
 
 interface SourceDetail {
@@ -108,64 +125,41 @@ const POLL_TIMEOUT_MS = 60_000;
 const nowStr = (): string =>
   new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
-/**
- * Aggressively strip ALL inline citation noise and HTML, then decode entities.
- * Handles: [*], [**], [^], [^1], [118-hr-8775_0], (*), (**), (^), "[*][*][^]", etc.
- */
 function cleanText(raw: string): string {
   if (!raw) return '';
   return raw
-    // Remove HTML tags
     .replace(/<\/?[a-zA-Z][^>]*>/g, ' ')
-    // Remove ALL bracket groups: [anything] — catches [*], [**], [^], [^1], [id], etc.
     .replace(/\[[^\]]*\]/g, '')
-    // Remove parenthetical noise markers: (*), (**), (^), (†), (1), etc.
     .replace(/\([*^†‡§¶\d]+\)/g, '')
-    // Remove stray asterisks (1 or more) that remain after bracket removal
     .replace(/\*+/g, '')
-    // Remove stray carets
     .replace(/\^+/g, '')
-    // Decode HTML entities
     .replace(/&amp;/g, '&')
     .replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>')
     .replace(/&nbsp;/g, ' ')
     .replace(/&quot;/g, '"')
     .replace(/&#39;/g, "'")
-    // Collapse multiple punctuation/spaces left behind
     .replace(/\.{2,}/g, '.')
     .replace(/\s{2,}/g, ' ')
     .trim();
 }
 
-/**
- * Build a congress.gov URL from a congressional bill ID.
- * Pattern:  {congress}-{type}-{number}  or  {congress}-{type}-{number}_{chunk}
- */
 function congressUrl(id: string): string | undefined {
   const base = id.replace(/_\d+$/, '');
   const match = base.match(/^(\d+)-(hr|s|hjres|sjres|hres|sres|hconres|sconres)-(\d+)$/i);
   if (!match) return undefined;
-
   const [, congress, typeRaw, number] = match;
   const typeMap: Record<string, string> = {
-    hr: 'house-bill',
-    s: 'senate-bill',
-    hjres: 'house-joint-resolution',
-    sjres: 'senate-joint-resolution',
-    hres: 'house-resolution',
-    sres: 'senate-resolution',
-    hconres: 'house-concurrent-resolution',
-    sconres: 'senate-concurrent-resolution',
+    hr: 'house-bill', s: 'senate-bill',
+    hjres: 'house-joint-resolution', sjres: 'senate-joint-resolution',
+    hres: 'house-resolution', sres: 'senate-resolution',
+    hconres: 'house-concurrent-resolution', sconres: 'senate-concurrent-resolution',
   };
   const billType = typeMap[typeRaw.toLowerCase()];
   if (!billType) return undefined;
   return `https://www.congress.gov/bill/${congress}th-congress/${billType}/${number}`;
 }
 
-/**
- * Resolve a URL from any available data about a source/document.
- */
 function resolveUrl(
   id: string,
   rawSource?: string,
@@ -174,51 +168,29 @@ function resolveUrl(
   billNumber?: string,
   congress?: string,
 ): string | undefined {
-  
   if (rawSource && /^https?:\/\//.test(rawSource)) return rawSource;
-
-  if (billId) {
-    const fromBillId = congressUrl(billId);
-    if (fromBillId) return fromBillId;
-  }
-
+  if (billId) { const u = congressUrl(billId); if (u) return u; }
   if (billType && billNumber && congress) {
-    const synth = `${congress}-${billType}-${billNumber}`;
-    const fromFields = congressUrl(synth);
-    if (fromFields) return fromFields;
+    const u = congressUrl(`${congress}-${billType}-${billNumber}`);
+    if (u) return u;
   }
-
-  const fromId = congressUrl(id);
-  if (fromId) return fromId;
-
-  return undefined;
+  return congressUrl(id);
 }
 
-/**
- * Build a human-readable title from a bill ID.
- * "118-hr-8775_0" → "H.R. 8775 (118th Congress)"
- */
 function titleFromId(id: string): string {
   const base = id.replace(/_\d+$/, '');
   const match = base.match(/^(\d+)-(hr|s|hjres|sjres|hres|sres|hconres|sconres)-(\d+)$/i);
   if (!match) return id;
-
   const [, congress, typeRaw, number] = match;
   const labelMap: Record<string, string> = {
-    hr: `H.R. ${number}`,
-    s: `S. ${number}`,
-    hjres: `H.J.Res. ${number}`,
-    sjres: `S.J.Res. ${number}`,
-    hres: `H.Res. ${number}`,
-    sres: `S.Res. ${number}`,
-    hconres: `H.Con.Res. ${number}`,
-    sconres: `S.Con.Res. ${number}`,
+    hr: `H.R. ${number}`, s: `S. ${number}`,
+    hjres: `H.J.Res. ${number}`, sjres: `S.J.Res. ${number}`,
+    hres: `H.Res. ${number}`, sres: `S.Res. ${number}`,
+    hconres: `H.Con.Res. ${number}`, sconres: `S.Con.Res. ${number}`,
   };
-  const label = labelMap[typeRaw.toLowerCase()] ?? id;
-  return `${label} (${congress}th Congress)`;
+  return `${labelMap[typeRaw.toLowerCase()] ?? id} (${congress}th Congress)`;
 }
 
-/** Fetch full source details from the backend for a given sourceId */
 async function fetchSourceDetail(sourceId: string): Promise<SourceDetail | null> {
   try {
     const res = await fetch(`${BASE_URL}/api/sources/${sourceId}`);
@@ -229,36 +201,24 @@ async function fetchSourceDetail(sourceId: string): Promise<SourceDetail | null>
   }
 }
 
-/** Build citations by fetching full source details from the backend */
 async function buildCitationsFromSourceIds(sourceIds: string[]): Promise<Citation[]> {
   const seen = new Set<string>();
   const citations: Citation[] = [];
-
   for (const id of sourceIds) {
     if (seen.has(id)) continue;
     seen.add(id);
-
     const detail = await fetchSourceDetail(id);
-
     const title = detail?.title || titleFromId(id);
     const excerpt = detail?.fullText ? cleanText(detail.fullText).slice(0, 220) : undefined;
-
     const url = resolveUrl(
-      id,
-      undefined,
-      detail?.billId,
-      detail?.billType,
-      detail?.billNumber,
-      detail?.billId?.match(/^(\d+)-/)?.[1],
+      id, undefined, detail?.billId, detail?.billType,
+      detail?.billNumber, detail?.billId?.match(/^(\d+)-/)?.[1],
     );
-
     citations.push({ id, title, url, excerpt });
   }
-
   return citations;
 }
 
-/** Build citations directly from embedded document objects */
 function buildCitationsFromDocs(docs: RetrievedDocument[]): Citation[] {
   const seen = new Set<string>();
   return docs
@@ -266,75 +226,41 @@ function buildCitationsFromDocs(docs: RetrievedDocument[]): Citation[] {
       const id = doc.id ?? doc._id ?? doc.doc_id ?? String(i + 1);
       if (seen.has(id)) return null;
       seen.add(id);
-
       const rawSource = doc.url ?? doc.source ?? doc.metadata?.url ?? doc.metadata?.source;
-
-      const title =
-        doc.title ??
-        doc.metadata?.title ??
-        titleFromId(id);
-
+      const title = doc.title ?? doc.metadata?.title ?? titleFromId(id);
       const url = resolveUrl(
-        id,
-        rawSource as string | undefined,
-        doc.bill_id,
-        doc.bill_type,
-        doc.bill_number,
-        doc.bill_id?.match(/^(\d+)-/)?.[1],
+        id, rawSource as string | undefined, doc.bill_id,
+        doc.bill_type, doc.bill_number, doc.bill_id?.match(/^(\d+)-/)?.[1],
       );
-
-      const rawExcerpt = doc.text ?? doc.content ?? doc.chunk_text ?? '';
-      const excerpt = cleanText(rawExcerpt).slice(0, 220) || undefined;
-
+      const excerpt = cleanText(doc.text ?? doc.content ?? doc.chunk_text ?? '').slice(0, 220) || undefined;
       return { id, title, url, excerpt } as Citation;
     })
     .filter((c): c is Citation => c !== null);
 }
 
-/** Extract the main answer text from the run result. */
 function extractAnswer(run: RunResult): string {
   if (run.answer) return cleanText(run.answer);
-
   let text = cleanText(run.agentCommentary?.content ?? '');
   text = text.replace(/^Graph Result:\s*/i, '').trim();
-
   const msgMatch = text.match(/'messages':\s*\[([^\]]+)\]/);
   if (msgMatch) {
     text = msgMatch[1].replace(/'/g, '').split(',').map((s) => s.trim()).filter(Boolean).join(' ');
   }
-
   if (text && text !== 'No result yet') return text;
   return cleanText(run.keyFinding?.summary ?? '');
 }
 
-/** Full parser: run result → {summary, bullets, citations} */
 async function parseResponse(run: RunResult): Promise<ParsedResponse> {
   const text = extractAnswer(run);
-
   if (!text) {
-    return {
-      summary: 'The analysis completed but did not produce a readable response.',
-      bullets: [],
-      citations: [],
-    };
+    return { summary: 'The analysis completed but did not produce a readable response.', bullets: [], citations: [] };
   }
-
-  const sentences = text
-    .split(/(?<=[.!?])\s+/)
-    .map((s) => s.trim())
-    .filter((s) => s.length > 0);
-
+  const sentences = text.split(/(?<=[.!?])\s+/).map((s) => s.trim()).filter((s) => s.length > 0);
   const summary = sentences[0] ?? text;
   const bullets = sentences.length > 1 ? sentences.slice(1) : [];
-
   let citations: Citation[] = [];
-
-  if (run.documents && run.documents.length > 0) {
-    citations = buildCitationsFromDocs(run.documents);
-  } else if (run.references?.sourceIds && run.references.sourceIds.length > 0) {
-    citations = await buildCitationsFromSourceIds(run.references.sourceIds);
-  }
-
+  if (run.documents && run.documents.length > 0) citations = buildCitationsFromDocs(run.documents);
+  else if (run.references?.sourceIds?.length) citations = await buildCitationsFromSourceIds(run.references.sourceIds);
   return { summary, bullets, citations };
 }
 
@@ -371,7 +297,10 @@ function guessRoute(query: string, run?: RunResult): 'nvidia' | 'huggingface' {
 
 // ─── FormattedResponse ────────────────────────────────────────────────────────
 
-const FormattedResponse: React.FC<{ parsed: ParsedResponse; onCitationClick: (c: Citation) => void }> = ({ parsed, onCitationClick }) => {
+const FormattedResponse: React.FC<{
+  parsed: ParsedResponse;
+  onCitationClick: (c: Citation) => void;
+}> = ({ parsed, onCitationClick }) => {
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
   return (
@@ -400,10 +329,10 @@ const FormattedResponse: React.FC<{ parsed: ParsedResponse; onCitationClick: (c:
                       {expandedId === c.id ? '▼' : '▶'}
                     </button>
                   )}
-
                   <span className="citation-id">[{c.id}]</span>
-                  <button className="citation-title-btn" onClick={() => onCitationClick(c)}>{c.title}</button>
-
+                  <button className="citation-title-btn" onClick={() => onCitationClick(c)}>
+                    {c.title}
+                  </button>
                   {c.url ? (
                     <a
                       href={c.url}
@@ -418,7 +347,6 @@ const FormattedResponse: React.FC<{ parsed: ParsedResponse; onCitationClick: (c:
                     <span className="citation-no-link">No link</span>
                   )}
                 </div>
-
                 {expandedId === c.id && c.excerpt && (
                   <p className="citation-excerpt">"{c.excerpt}…"</p>
                 )}
@@ -512,7 +440,12 @@ interface ReasoningStep {
   progress?: number;
 }
 
-const ReasoningPanel: React.FC<{ routedTo?: string; isTyping?: boolean }> = ({ routedTo, isTyping }) => {
+const ReasoningPanel: React.FC<{
+  routedTo?: string;
+  isTyping?: boolean;
+  sessionMetrics?: { totalCarbonG: number; totalTokens: number; queryCount: number };
+  lastMetrics?: GreenMetrics;
+}> = ({ routedTo, isTyping, sessionMetrics, lastMetrics }) => {
   const steps: ReasoningStep[] = [
     {
       label: 'Semantic Search',
@@ -614,9 +547,55 @@ const ReasoningPanel: React.FC<{ routedTo?: string; isTyping?: boolean }> = ({ r
         <p className="trust-desc">Verified against official legal statute datasets.</p>
       </div>
 
+      {/* Green Metrics Stats — real backend values */}
       <div className="rpanel-stats">
-        <div className="rpanel-stat-row"><span>Sources Analyzed</span><strong>12</strong></div>
-        <div className="rpanel-stat-row"><span>Carbon Footprint</span><strong>0.3g CO₂</strong></div>
+        {(!sessionMetrics || sessionMetrics.queryCount === 0) ? (
+          <div className="rpanel-green-empty">
+            <span>🌿</span>
+            <span>Carbon metrics will appear after your first query.</span>
+          </div>
+        ) : (
+          <>
+            <div className="rpanel-stats-section-label">LAST QUERY</div>
+            <div className="rpanel-stat-row">
+              <span>CO₂ Footprint</span>
+              <strong className="rpanel-green-value">
+                {lastMetrics && lastMetrics.carbonG > 0 ? `${lastMetrics.carbonG.toFixed(4)}g` : '0.0000g'}
+              </strong>
+            </div>
+            <div className="rpanel-stat-row">
+              <span>Tokens Used</span>
+              <strong>{lastMetrics && lastMetrics.tokensUsed > 0 ? lastMetrics.tokensUsed.toLocaleString() : '0'}</strong>
+            </div>
+            <div className="rpanel-stat-row">
+              <span>Latency</span>
+              <strong>{lastMetrics && lastMetrics.latencyMs > 0 ? `${(lastMetrics.latencyMs / 1000).toFixed(1)}s` : '0.0s'}</strong>
+            </div>
+
+            <div className="rpanel-stats-divider" />
+            <div className="rpanel-stats-section-label">THIS SESSION</div>
+            <div className="rpanel-stat-row">
+              <span>Total CO₂</span>
+              <strong className="rpanel-green-value">{sessionMetrics.totalCarbonG.toFixed(4)}g</strong>
+            </div>
+            <div className="rpanel-stat-row">
+              <span>Total Tokens</span>
+              <strong>{sessionMetrics.totalTokens.toLocaleString()}</strong>
+            </div>
+            <div className="rpanel-stat-row">
+              <span>Queries Run</span>
+              <strong>{sessionMetrics.queryCount}</strong>
+            </div>
+            <div className="rpanel-carbon-context">
+              <span className="rpanel-carbon-leaf">🌿</span>
+              <span>
+                {sessionMetrics.totalCarbonG < 1
+                  ? `${sessionMetrics.totalCarbonG.toFixed(4)}g CO₂ — less than driving 1 metre`
+                  : `${sessionMetrics.totalCarbonG.toFixed(2)}g CO₂ this session`}
+              </span>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );
@@ -637,22 +616,17 @@ const AIagentPage: React.FC<{ darkMode?: boolean; toggleDarkMode?: () => void }>
   ]);
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
+
+  // Document preview state
   const [previewCitation, setPreviewCitation] = useState<Citation | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
 
-const [previewLoading, setPreviewLoading] = useState(false);
-
-const handleCitationClick = useCallback(async (c: Citation) => {
-  setPreviewCitation(c);
-  setPreviewLoading(true);
-  const detail = await fetchSourceDetail(c.id);
-  if (detail?.fullText) {
-    setPreviewCitation({
-      ...c,
-      excerpt: cleanText(detail.fullText).slice(0, 6000),
-    });
-  }
-  setPreviewLoading(false);
-}, []);
+  // Session-level cumulative green metrics
+  const [sessionMetrics, setSessionMetrics] = useState({
+    totalCarbonG: 0,
+    totalTokens: 0,
+    queryCount: 0,
+  });
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -662,6 +636,20 @@ const handleCitationClick = useCallback(async (c: Citation) => {
   }, [messages, isTyping]);
 
   useEffect(() => { inputRef.current?.focus(); }, []);
+
+  // Citation click → fetch full text, show doc preview panel
+  const handleCitationClick = useCallback(async (c: Citation) => {
+    setPreviewCitation(c);
+    setPreviewLoading(true);
+    const detail = await fetchSourceDetail(c.id);
+    if (detail?.fullText) {
+      setPreviewCitation({
+        ...c,
+        excerpt: cleanText(detail.fullText).slice(0, 6000),
+      });
+    }
+    setPreviewLoading(false);
+  }, []);
 
   const handleSend = useCallback(async (text?: string): Promise<void> => {
     const messageText = (text ?? input).trim();
@@ -680,6 +668,20 @@ const handleCitationClick = useCallback(async (c: Citation) => {
       const parsed = await parseResponse(run);
       const routedTo = guessRoute(messageText, run);
 
+      // Extract real green metrics from backend reasoningPath
+      const metrics: GreenMetrics = {
+        carbonG: run.reasoningPath?.carbonTotalG ?? 0,
+        tokensUsed: run.reasoningPath?.tokensUsed ?? 0,
+        latencyMs: run.reasoningPath?.latencyMs ?? 0,
+      };
+
+      // Accumulate into session totals
+      setSessionMetrics((prev) => ({
+        totalCarbonG: prev.totalCarbonG + metrics.carbonG,
+        totalTokens: prev.totalTokens + metrics.tokensUsed,
+        queryCount: prev.queryCount + 1,
+      }));
+
       setMessages((prev) => [
         ...prev,
         {
@@ -690,6 +692,7 @@ const handleCitationClick = useCallback(async (c: Citation) => {
           time: nowStr(),
           runId,
           routedTo,
+          metrics,
         },
       ]);
     } catch (err: unknown) {
@@ -794,32 +797,32 @@ const handleCitationClick = useCallback(async (c: Citation) => {
             New Research Case
           </button>
           {toggleDarkMode && (
-  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 4px' }}>
-    <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-      {darkMode ? 'Dark Mode' : 'Light Mode'}
-    </span>
-    <button
-      onClick={toggleDarkMode}
-      style={{
-        width: '44px', height: '24px', borderRadius: '999px',
-        border: 'none', cursor: 'pointer', padding: 0,
-        background: darkMode ? '#3b82f6' : '#e2e8f0',
-        transition: 'background 0.3s ease',
-        display: 'flex', alignItems: 'center',
-      }}
-    >
-      <span className="toggle-thumb" style={{
-  width: '18px', height: '18px', borderRadius: '50%',
-  background: 'white', display: 'flex', alignItems: 'center',
-  justifyContent: 'center', overflow: 'hidden',
-  transform: darkMode ? 'translateX(22px)' : 'translateX(3px)',
-  boxShadow: '0 1px 4px rgba(0,0,0,0.2)',
-}}>
-  <img src={darkMode ? moonIcon : sunIcon} width="12" height="12" style={{ objectFit: 'contain' }} />
-</span>
-    </button>
-  </div>
-  )}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 4px' }}>
+              <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                {darkMode ? 'Dark Mode' : 'Light Mode'}
+              </span>
+              <button
+                onClick={toggleDarkMode}
+                style={{
+                  width: '44px', height: '24px', borderRadius: '999px',
+                  border: 'none', cursor: 'pointer', padding: 0,
+                  background: darkMode ? '#3b82f6' : '#e2e8f0',
+                  transition: 'background 0.3s ease',
+                  display: 'flex', alignItems: 'center',
+                }}
+              >
+                <span className="toggle-thumb" style={{
+                  width: '18px', height: '18px', borderRadius: '50%',
+                  background: 'white', display: 'flex', alignItems: 'center',
+                  justifyContent: 'center', overflow: 'hidden',
+                  transform: darkMode ? 'translateX(22px)' : 'translateX(3px)',
+                  boxShadow: '0 1px 4px rgba(0,0,0,0.2)',
+                }}>
+                  <img src={darkMode ? moonIcon : sunIcon} width="12" height="12" style={{ objectFit: 'contain' }} />
+                </span>
+              </button>
+            </div>
+          )}
           <div className="sidebar-user">
             <div className="sidebar-user-avatar">
               <img src="https://ui-avatars.com/api/?name=James+Sterling&background=e2e8f0&color=475569&size=36&font-size=0.4&bold=true" alt="JS" />
@@ -852,6 +855,16 @@ const handleCitationClick = useCallback(async (c: Citation) => {
                 </svg>
                 <span>Trust Score 98%</span>
               </div>
+              {/* Live session CO₂ in header once queries run */}
+              {sessionMetrics.queryCount > 0 && (
+                <div className="header-badge header-badge-green">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="2.5">
+                    <path d="M12 2C6 2 2 8 2 12c0 5.5 4.5 10 10 10s10-4.5 10-10c0-1-.2-2-.5-3" />
+                    <path d="M12 6v6l4 2" stroke="#10b981" strokeWidth="2" strokeLinecap="round" />
+                  </svg>
+                  <span>🌿 {sessionMetrics.totalCarbonG.toFixed(4)}g CO₂ session</span>
+                </div>
+              )}
               <div className="header-badge">
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="2.5">
                   <circle cx="12" cy="12" r="10" /><path d="M9 12l2 2 4-4" />
@@ -907,6 +920,17 @@ const handleCitationClick = useCallback(async (c: Citation) => {
                           {msg.runId && (
                             <span className="run-id-badge" title="Orchestrator run ID">
                               {msg.runId.slice(0, 18)}…
+                            </span>
+                          )}
+                          {/* Per-query green metrics badge — only shows real non-zero values */}
+                          {msg.metrics && (msg.metrics.carbonG > 0 || msg.metrics.tokensUsed > 0) && (
+                            <span className="green-metrics-badge" title="Green computing metrics for this query">
+                              🌿 {msg.metrics.carbonG.toFixed(4)}g CO₂
+                              &nbsp;·&nbsp;
+                              🔢 {msg.metrics.tokensUsed.toLocaleString()} tok
+                              {msg.metrics.latencyMs > 0 && (
+                                <>&nbsp;·&nbsp;⏱ {(msg.metrics.latencyMs / 1000).toFixed(1)}s</>
+                              )}
                             </span>
                           )}
                         </div>
@@ -1096,8 +1120,7 @@ const handleCitationClick = useCallback(async (c: Citation) => {
             )}
           </div>
 
-          {/* ── Right Panel — Reasoning ────────────────────────────────── */}
-          {/* ── Right Panel — Reasoning ────────────────────────────────── */}
+          {/* ── Right Panel — Doc Preview (when open) or Reasoning + Green Metrics ── */}
           {hasStartedChat && (
             <aside className="right-panel">
               <div className="right-panel-content" style={{ paddingTop: '12px' }}>
@@ -1105,7 +1128,13 @@ const handleCitationClick = useCallback(async (c: Citation) => {
                   <div className="doc-preview-panel">
                     <div className="doc-preview-header">
                       <span className="doc-preview-title">{previewCitation.title}</span>
-                      <button className="doc-preview-close" onClick={() => setPreviewCitation(null)} aria-label="Close preview">✕</button>
+                      <button
+                        className="doc-preview-close"
+                        onClick={() => setPreviewCitation(null)}
+                        aria-label="Close preview"
+                      >
+                        ✕
+                      </button>
                     </div>
                     <div className="doc-preview-body">
                       {previewLoading ? (
@@ -1117,13 +1146,23 @@ const handleCitationClick = useCallback(async (c: Citation) => {
                             <p className="doc-preview-excerpt">"{previewCitation.excerpt}…"</p>
                           </div>
                           {previewCitation.url && (
-                            <a href={previewCitation.url} target="_blank" rel="noreferrer noopener" className="doc-preview-open-btn">
+                            <a
+                              href={previewCitation.url}
+                              target="_blank"
+                              rel="noreferrer noopener"
+                              className="doc-preview-open-btn"
+                            >
                               Open full document ↗
                             </a>
                           )}
                         </>
                       ) : previewCitation.url ? (
-                        <a href={previewCitation.url} target="_blank" rel="noreferrer noopener" className="doc-preview-open-btn">
+                        <a
+                          href={previewCitation.url}
+                          target="_blank"
+                          rel="noreferrer noopener"
+                          className="doc-preview-open-btn"
+                        >
                           Open full document ↗
                         </a>
                       ) : (
@@ -1132,7 +1171,12 @@ const handleCitationClick = useCallback(async (c: Citation) => {
                     </div>
                   </div>
                 ) : (
-                  <ReasoningPanel routedTo={activeRoutedTo} isTyping={isTyping} />
+                  <ReasoningPanel
+                    routedTo={activeRoutedTo}
+                    isTyping={isTyping}
+                    sessionMetrics={sessionMetrics}
+                    lastMetrics={lastAssistant?.metrics}
+                  />
                 )}
               </div>
             </aside>
