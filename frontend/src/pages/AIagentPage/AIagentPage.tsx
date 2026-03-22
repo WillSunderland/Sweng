@@ -592,8 +592,8 @@ const AgentThinkingBlock: React.FC<{
 
   const effectiveEvent: AgentEvent = currentEvent ?? (
     isStreaming
-      ? { event: 'thinking', label: 'Thinking...', emoji: '🤔', elapsed: 0 }
-      : { event: 'init',     label: 'Initialising...', emoji: '🚀', elapsed: 0 }
+      ? { event: 'thinking', label: 'Thinking...', elapsed: 0 }
+      : { event: 'init',     label: 'Initialising...', elapsed: 0 }
   );
 
   useEffect(() => {
