@@ -1,0 +1,51 @@
+{
+  "actions": {
+    "count": 2,
+    "url": "https://api.congress.gov/v3/bill/118/s/5599/actions?format=json"
+  },
+  "committees": {
+    "count": 1,
+    "url": "https://api.congress.gov/v3/bill/118/s/5599/committees?format=json"
+  },
+  "congress": 118,
+  "introducedDate": "2024-12-18",
+  "latestAction": {
+    "actionDate": "2024-12-18",
+    "text": "Read twice and referred to the Committee on Commerce, Science, and Transportation."
+  },
+  "legislationUrl": "https://www.congress.gov/bill/118th-congress/senate-bill/5599",
+  "number": "5599",
+  "originChamber": "Senate",
+  "originChamberCode": "S",
+  "policyArea": {
+    "name": "Transportation and Public Works"
+  },
+  "sponsors": [
+    {
+      "bioguideId": "C001098",
+      "firstName": "Ted",
+      "fullName": "Sen. Cruz, Ted [R-TX]",
+      "isByRequest": "N",
+      "lastName": "Cruz",
+      "party": "R",
+      "state": "TX",
+      "url": "https://api.congress.gov/v3/member/C001098?format=json"
+    }
+  ],
+  "subjects": {
+    "count": 8,
+    "url": "https://api.congress.gov/v3/bill/118/s/5599/subjects?format=json"
+  },
+  "textVersions": {
+    "count": 1,
+    "url": "https://api.congress.gov/v3/bill/118/s/5599/text?format=json"
+  },
+  "title": "Fog Forecast Improvement Act",
+  "titles": {
+    "count": 3,
+    "url": "https://api.congress.gov/v3/bill/118/s/5599/titles?format=json"
+  },
+  "type": "S",
+  "updateDate": "2025-08-14T15:57:27Z",
+  "updateDateIncludingText": "2025-08-14T15:57:27Z"
+}

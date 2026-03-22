@@ -74,12 +74,16 @@ backend-test:
     paths:
       - .cache/pip
   before_script:
+    - export PYTHONPATH=$PYTHONPATH:backend
     - pip install -r backend/orchestrator/requirements.txt
     - pip install -r backend/mcp_server/requirements.txt
     - pip install pytest pytest-cov
   script:
+    - pip install uvicorn
+    - uvicorn backend.orchestrator.main:app --host 0.0.0.0 --port 8002 &
+    - sleep 5
     - |
-      PYTHONPATH=. pytest backend/ --ignore=backend/ingestion/test_queries.py --cov=backend --cov-report=term-missing --cov-report=xml:coverage.xml --junitxml=report.xml -v || EXIT_CODE=$?
+      pytest backend/ --ignore=backend/ingestion/test_queries.py --cov=backend --cov-report=term-missing --cov-report=xml:coverage.xml --junitxml=report.xml -v || EXIT_CODE=$?
       EXIT_CODE=${EXIT_CODE:-0}
       if [ "$EXIT_CODE" -eq 5 ]; then
         echo "No tests collected (exit 5) — treating as success."
@@ -149,6 +153,9 @@ backend-unit-tests:
     paths:
       - .pytest_cache/
       - .testmondata
+  before_script:
+    - pip install -r backend/orchestrator/requirements.txt
+    - pip install -r backend/mcp_server/requirements.txt
   script:
     - pip install -r requirements.txt
     - pip install pytest pytest-testmon
@@ -169,6 +176,9 @@ backend-integration-tests:
   rules:
     - if: '$CI_COMMIT_BRANCH == "main"'
     - if: '$CI_MERGE_REQUEST_TARGET_BRANCH_NAME == "main"'
+  before_script:
+    - pip install -r backend/orchestrator/requirements.txt
+    - pip install -r backend/mcp_server/requirements.txt
   script:
     - pip install -r requirements.txt
     - pip install -r backend/orchestrator/requirements.txt
