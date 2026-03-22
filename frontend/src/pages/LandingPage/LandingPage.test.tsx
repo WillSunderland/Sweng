@@ -51,7 +51,7 @@ const openRegisterModal = () =>
  * when there are similarly-named elements outside the modal.
  */
 const getModalPanel = () =>
-  document.querySelector('.fixed.inset-0 .relative.bg-white') as HTMLElement;
+  screen.queryByTestId('modal-panel') as HTMLElement;
 
 /** The first button in the modal panel is always the icon-only close (×) button. */
 const getCloseButton = () => within(getModalPanel()).getAllByRole('button')[0];
