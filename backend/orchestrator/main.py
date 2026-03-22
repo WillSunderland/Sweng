@@ -9,6 +9,13 @@ from graph import app as graph_app
 from semantic_retrieval import SemanticRetriever
 from url_utils import resolve_source_url
 from cache import QueryCache
+import time
+import sys
+import os
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+
+from services.carbon_estimator import estimate_carbon_tons, tons_to_grams
 
 app = FastAPI(title="Orchestrator API")
 
@@ -110,6 +117,7 @@ async def create_run(request: CreateRunRequest):
     cached_result = query_cache.get(request.query)
     if cached_result:
         result = cached_result
+        latency_ms = 0  # cached, no real latency
     else:
         initial_state = {
             "query": request.query,
@@ -121,11 +129,22 @@ async def create_run(request: CreateRunRequest):
             "token_count": 0,
             "error": "",
         }
+        _t0 = time.time()
         result = await graph_app.ainvoke(initial_state)
+        latency_ms = int((time.time() - _t0) * 1000)
         query_cache.set(request.query, result)
+
+    carbon_tons = estimate_carbon_tons(
+        result.get("model_used"),
+        result.get("provider_used"),
+    )
+    carbon_g = tons_to_grams(carbon_tons)
 
     RUN_STORE[run_id]["result"] = result
     RUN_STORE[run_id]["status"] = RUN_STATUS_COMPLETED
+    RUN_STORE[run_id]["latency_ms"] = latency_ms
+    RUN_STORE[run_id]["carbon_g"] = carbon_g
+    RUN_STORE[run_id]["tokens_used"] = result.get("token_count", 0)
 
     documents = result.get("documents", []) or []
     source_ids = []
@@ -188,7 +207,9 @@ async def list_runs(
                 "priority": stored_priority,
                 "createdAt": run["createdAt"],
                 "updatedAt": run.get("updatedAt", run["createdAt"]),
-                "carbonG": DEFAULT_CARBON_G,
+                "carbonG": run.get("carbon_g", DEFAULT_CARBON_G),
+                "latency_ms": run.get("latency_ms"),
+                "tokens_used": run.get("tokens_used", 0),
                 "model_used": result.get("model_used"),
                 "provider": result.get("provider_used"),
                 "sourceCount": len(run.get("sourceIds", [])),
@@ -278,7 +299,9 @@ async def get_run(run_id: str):
             "engine": "langgraph",
             "steps": reasoning_steps,
             "trustScore": DEFAULT_TRUST_SCORE,
-            "carbonTotalG": DEFAULT_CARBON_G,
+            "carbonTotalG": run.get("carbon_g", DEFAULT_CARBON_G),
+            "latencyMs": run.get("latency_ms"),
+            "tokensUsed": run.get("tokens_used", 0),
         },
         "references": {"sourceIds": source_ids},
     }
