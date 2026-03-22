@@ -1,13 +1,8 @@
 import httpx
-import asyncio
+import pytest
 
-
-async def check():
+@pytest.mark.asyncio
+async def test_health_endpoint():
     async with httpx.AsyncClient() as client:
         r = await client.get("http://localhost:8002/health")
-        print(r.status_code, r.text)
-        print(await r.aread())  # just to see the body
-        print(await r.json())  # this may be needed depending on httpx version
-
-
-asyncio.run(check())
+        assert r.status_code == 200
