@@ -371,7 +371,7 @@ function guessRoute(query: string, run?: RunResult): 'nvidia' | 'huggingface' {
 
 // ─── FormattedResponse ────────────────────────────────────────────────────────
 
-const FormattedResponse: React.FC<{ parsed: ParsedResponse }> = ({ parsed }) => {
+const FormattedResponse: React.FC<{ parsed: ParsedResponse; onCitationClick: (c: Citation) => void }> = ({ parsed, onCitationClick }) => {
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
   return (
@@ -402,7 +402,7 @@ const FormattedResponse: React.FC<{ parsed: ParsedResponse }> = ({ parsed }) => 
                   )}
 
                   <span className="citation-id">[{c.id}]</span>
-                  <span className="citation-title">{c.title}</span>
+                  <button className="citation-title-btn" onClick={() => onCitationClick(c)}>{c.title}</button>
 
                   {c.url ? (
                     <a
@@ -637,6 +637,22 @@ const AIagentPage: React.FC<{ darkMode?: boolean; toggleDarkMode?: () => void }>
   ]);
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
+  const [previewCitation, setPreviewCitation] = useState<Citation | null>(null);
+
+const [previewLoading, setPreviewLoading] = useState(false);
+
+const handleCitationClick = useCallback(async (c: Citation) => {
+  setPreviewCitation(c);
+  setPreviewLoading(true);
+  const detail = await fetchSourceDetail(c.id);
+  if (detail?.fullText) {
+    setPreviewCitation({
+      ...c,
+      excerpt: cleanText(detail.fullText).slice(0, 6000),
+    });
+  }
+  setPreviewLoading(false);
+}, []);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -876,7 +892,7 @@ const AIagentPage: React.FC<{ darkMode?: boolean; toggleDarkMode?: () => void }>
                       <div className="message-content">
                         <div className={`message-bubble ${msg.type}`}>
                           {msg.type === 'assistant' && msg.parsed
-                            ? <FormattedResponse parsed={msg.parsed} />
+                            ? <FormattedResponse parsed={msg.parsed} onCitationClick={handleCitationClick} />
                             : msg.text}
                         </div>
                         <div className="message-meta">
@@ -1081,10 +1097,43 @@ const AIagentPage: React.FC<{ darkMode?: boolean; toggleDarkMode?: () => void }>
           </div>
 
           {/* ── Right Panel — Reasoning ────────────────────────────────── */}
+          {/* ── Right Panel — Reasoning ────────────────────────────────── */}
           {hasStartedChat && (
             <aside className="right-panel">
               <div className="right-panel-content" style={{ paddingTop: '12px' }}>
-                <ReasoningPanel routedTo={activeRoutedTo} isTyping={isTyping} />
+                {previewCitation ? (
+                  <div className="doc-preview-panel">
+                    <div className="doc-preview-header">
+                      <span className="doc-preview-title">{previewCitation.title}</span>
+                      <button className="doc-preview-close" onClick={() => setPreviewCitation(null)} aria-label="Close preview">✕</button>
+                    </div>
+                    <div className="doc-preview-body">
+                      {previewLoading ? (
+                        <p className="doc-preview-no-content">Loading document…</p>
+                      ) : previewCitation.excerpt ? (
+                        <>
+                          <div className="doc-preview-highlight">
+                            <span className="doc-preview-highlight-label">Cited section</span>
+                            <p className="doc-preview-excerpt">"{previewCitation.excerpt}…"</p>
+                          </div>
+                          {previewCitation.url && (
+                            <a href={previewCitation.url} target="_blank" rel="noreferrer noopener" className="doc-preview-open-btn">
+                              Open full document ↗
+                            </a>
+                          )}
+                        </>
+                      ) : previewCitation.url ? (
+                        <a href={previewCitation.url} target="_blank" rel="noreferrer noopener" className="doc-preview-open-btn">
+                          Open full document ↗
+                        </a>
+                      ) : (
+                        <p className="doc-preview-no-content">No preview available for this source.</p>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <ReasoningPanel routedTo={activeRoutedTo} isTyping={isTyping} />
+                )}
               </div>
             </aside>
           )}
