@@ -60,11 +60,13 @@ async def create_run(request: CreateRunRequest):
     cached = None if history_for_query else _query_cache.get(request.query)
 
     if cached:
+
         class _CachedResult:
             answer = cached.get("answer", "")
             sources = [SourceInfo(**s) for s in cached.get("sources", [])]
             citation_validation = cached.get("citation_validation")
             error = None
+
         result = _CachedResult()
     else:
         result = await query_endpoint(
@@ -78,11 +80,15 @@ async def create_run(request: CreateRunRequest):
         if not history_for_query and not getattr(result, "error", None):
             _query_cache.set(request.query, result.model_dump())
 
-    RUN_STORE[run_id]["result"] = result.model_dump() if hasattr(result, "model_dump") else {
-        "answer": result.answer,
-        "sources": [s.model_dump() for s in result.sources],
-        "citation_validation": result.citation_validation,
-    }
+    RUN_STORE[run_id]["result"] = (
+        result.model_dump()
+        if hasattr(result, "model_dump")
+        else {
+            "answer": result.answer,
+            "sources": [s.model_dump() for s in result.sources],
+            "citation_validation": result.citation_validation,
+        }
+    )
     RUN_STORE[run_id]["status"] = RUN_STATUS_COMPLETED
 
     if request.session_id:
