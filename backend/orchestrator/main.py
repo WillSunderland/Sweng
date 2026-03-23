@@ -9,8 +9,9 @@ from pydantic import Field
 
 from app.main import app as shared_app
 from app.main import query_endpoint
-from app.models import ChatMessage, QueryRequest
+from app.models import ChatMessage, QueryRequest, SourceInfo
 from app.services.carbon_estimator import tons_to_grams
+from backend.orchestrator.cache import QueryCache
 
 RUN_STATUS_COMPLETED = "completed"
 RUN_STATUS_RUNNING = "running"
@@ -19,7 +20,8 @@ DEFAULT_CARBON_G = 0.3
 
 RUN_STORE: dict[str, dict] = {}
 SOURCE_STORE: dict[str, dict] = {}
-SESSION_STORE: dict[str, list[dict]] = {}  # session_id -> list of {role, content} turns
+SESSION_STORE: dict[str, list[dict]] = {}
+_query_cache = QueryCache(ttl_seconds=3600, max_size=100)
 
 app = shared_app
 
@@ -47,25 +49,42 @@ async def create_run(request: CreateRunRequest):
         "status": RUN_STATUS_RUNNING,
     }
 
-    # If session_id provided, load stored history and ignore any client-sent chat_history.
-    # If no session_id, use whatever chat_history the client sent (stateless mode).
     if request.session_id:
         session_history = SESSION_STORE.get(request.session_id, [])
         history_for_query = [ChatMessage(**turn) for turn in session_history]
     else:
         history_for_query = request.chat_history
 
-    result = await query_endpoint(
-        QueryRequest(
-            query=request.query,
-            chat_history=history_for_query,
-            max_reasoning_steps=request.max_reasoning_steps,
+    # Only use cache for stateless queries — skip when session history exists
+    # so follow-up queries always get fresh context-aware answers
+    cached = None if history_for_query else _query_cache.get(request.query)
+
+    if cached:
+        class _CachedResult:
+            answer = cached.get("answer", "")
+            sources = [SourceInfo(**s) for s in cached.get("sources", [])]
+            citation_validation = cached.get("citation_validation")
+            error = None
+        result = _CachedResult()
+    else:
+        result = await query_endpoint(
+            QueryRequest(
+                query=request.query,
+                chat_history=history_for_query,
+                max_reasoning_steps=request.max_reasoning_steps,
+            )
         )
-    )
-    RUN_STORE[run_id]["result"] = result.model_dump()
+        # Only cache successful stateless queries
+        if not history_for_query and not getattr(result, "error", None):
+            _query_cache.set(request.query, result.model_dump())
+
+    RUN_STORE[run_id]["result"] = result.model_dump() if hasattr(result, "model_dump") else {
+        "answer": result.answer,
+        "sources": [s.model_dump() for s in result.sources],
+        "citation_validation": result.citation_validation,
+    }
     RUN_STORE[run_id]["status"] = RUN_STATUS_COMPLETED
 
-    # Save this turn to session history so the next request has context.
     if request.session_id:
         if request.session_id not in SESSION_STORE:
             SESSION_STORE[request.session_id] = []
@@ -75,7 +94,6 @@ async def create_run(request: CreateRunRequest):
         SESSION_STORE[request.session_id].append(
             {"role": "assistant", "content": result.answer}
         )
-        # Cap at 20 turns (40 messages) to avoid unbounded growth
         SESSION_STORE[request.session_id] = SESSION_STORE[request.session_id][-40:]
 
     for idx, source in enumerate(result.sources, start=1):
@@ -118,6 +136,7 @@ async def get_run(run_id: str):
     reasoning_steps = result.get("reasoning_steps", [])
     carbon_tons = float(result.get("carbonCountInTons", 0.0))
     carbon_grams = tons_to_grams(carbon_tons) if carbon_tons else DEFAULT_CARBON_G
+    citation_validation = result.get("citation_validation")
 
     return {
         "runId": run_id,
@@ -152,6 +171,7 @@ async def get_run(run_id: str):
         "references": {
             "sourceIds": source_ids,
         },
+        "citationValidation": citation_validation,
     }
 
 
@@ -165,7 +185,6 @@ async def get_source(source_id: str):
 
 @app.get("/api/sessions/{session_id}")
 async def get_session(session_id: str):
-    """Returns the stored chat history for a session."""
     history = SESSION_STORE.get(session_id)
     if history is None:
         raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
@@ -178,7 +197,6 @@ async def get_session(session_id: str):
 
 @app.delete("/api/sessions/{session_id}")
 async def clear_session(session_id: str):
-    """Clears the chat history for a session."""
     if session_id not in SESSION_STORE:
         raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
     SESSION_STORE.pop(session_id)

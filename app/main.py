@@ -131,6 +131,7 @@ async def query_endpoint(request: QueryRequest):
             plan=response_data.get("plan", []),
             reasoning_steps=response_data.get("reasoning_steps", []),
             retrieval_skipped=response_data.get("retrieval_skipped", False),
+            citation_validation=response_data.get("citation_validation"),
         )
 
     except Exception as exc:
