@@ -65,6 +65,7 @@ class QueryResponse(BaseModel):
     plan: list[str] = Field(default_factory=list)
     reasoning_steps: list[dict[str, Any]] = Field(default_factory=list)
     retrieval_skipped: bool = False
+    citation_validation: dict[str, Any] | None = None
 
 
 class HealthResponse(BaseModel):
