@@ -656,6 +656,7 @@ const FormattedResponse: React.FC<{
           </div>
         </div>
       )}
+
     </div>
   );
 };
@@ -868,10 +869,27 @@ const ReasoningPanel: React.FC<{
                   <div className="rpanel-progress-bar">
                     <div className="rpanel-progress-fill" style={{ width: `${step.progress}%` }} />
                   </div>
-                  <span className="rpanel-progress-pct">{step.progress}%</span>
-                </div>
-              )}
+                )}
+                {step.progress !== undefined && step.status === 'active' && (
+                  <div className="rpanel-progress-wrap">
+                    <div className="rpanel-progress-bar">
+                      <div className="rpanel-progress-fill" style={{ width: `${step.progress}%` }} />
+                    </div>
+                    <span className="rpanel-progress-pct">{step.progress}%</span>
+                  </div>
+                )}
+              </div>
             </div>
+          );
+        })}
+      </div>
+
+      {/* ── Impact Report ──────────────────────────────────────────────── */}
+      <div className="impact-report">
+        <div className="ir-header">
+          <div className="ir-header-left">
+            <Leaf size={13} strokeWidth={2} />
+            <span className="ir-title">Impact Report</span>
           </div>
         ))}
       </div>
@@ -1304,7 +1322,7 @@ const AIagentPage: React.FC<{ darkMode?: boolean; toggleDarkMode?: () => void }>
                           </span>
                           {msg.routedTo && (
                             <span className={`route-badge route-${msg.routedTo}`}>
-                              {msg.routedTo === 'nvidia' ? '⚡ Nvidia' : '🤗 HuggingFace'}
+                              {msg.routedTo === 'nvidia' ? 'Nvidia NIM' : 'HuggingFace'}
                             </span>
                           )}
                           {msg.runId && (
