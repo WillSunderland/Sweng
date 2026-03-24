@@ -50,9 +50,8 @@ frontend-lint:
   tags:
     - docker
   cache:
-    key: frontend-deps
+    key: frontend-npm-v2
     paths:
-      - frontend/node_modules/
       - .cache/npm
   before_script:
     - cd frontend
@@ -107,9 +106,8 @@ frontend-test:
   tags:
     - docker
   cache:
-    key: frontend-deps
+    key: frontend-npm-v2
     paths:
-      - frontend/node_modules/
       - .cache/npm
   before_script:
     - cd frontend
@@ -200,9 +198,8 @@ frontend-build:
   needs:
     - frontend-lint
   cache:
-    key: frontend-deps
+    key: frontend-npm-v2
     paths:
-      - frontend/node_modules/
       - .cache/npm
   before_script:
     - cd frontend
