@@ -77,17 +77,23 @@ async def create_run(request: CreateRunRequest):
     cached = None if history_for_query else _query_cache.get(request.query)
 
     if cached:
+
         class _CachedResult:
             answer = cached.get("answer", "")
             sources = [SourceInfo(**s) for s in cached.get("sources", [])]
             citation_validation = cached.get("citation_validation")
             error = None
+
         result = _CachedResult()
     else:
-        with trace_node("orchestrator_query", build_trace_metadata(
-            {"query": request.query}, "create_run",
-            extras={"run_id": run_id, "has_history": bool(history_for_query)},
-        )) as t_ctx:
+        with trace_node(
+            "orchestrator_query",
+            build_trace_metadata(
+                {"query": request.query},
+                "create_run",
+                extras={"run_id": run_id, "has_history": bool(history_for_query)},
+            ),
+        ) as t_ctx:
             result = await query_endpoint(
                 QueryRequest(
                     query=request.query,
@@ -112,11 +118,15 @@ async def create_run(request: CreateRunRequest):
         if not history_for_query and not getattr(result, "error", None):
             _query_cache.set(request.query, result.model_dump())
 
-    RUN_STORE[run_id]["result"] = result.model_dump() if hasattr(result, "model_dump") else {
-        "answer": result.answer,
-        "sources": [s.model_dump() for s in result.sources],
-        "citation_validation": result.citation_validation,
-    }
+    RUN_STORE[run_id]["result"] = (
+        result.model_dump()
+        if hasattr(result, "model_dump")
+        else {
+            "answer": result.answer,
+            "sources": [s.model_dump() for s in result.sources],
+            "citation_validation": result.citation_validation,
+        }
+    )
     RUN_STORE[run_id]["status"] = RUN_STATUS_COMPLETED
 
     if request.session_id:
@@ -132,7 +142,11 @@ async def create_run(request: CreateRunRequest):
 
     for idx, source in enumerate(result.sources, start=1):
         source_id = f"{run_id}_src_{idx:03d}"
-        source_data = source.model_dump() if hasattr(source, "model_dump") else (source if isinstance(source, dict) else {})
+        source_data = (
+            source.model_dump()
+            if hasattr(source, "model_dump")
+            else (source if isinstance(source, dict) else {})
+        )
         SOURCE_STORE[source_id] = {
             "sourceId": source_id,
             "title": source_data.get("title", "Untitled"),
@@ -146,9 +160,15 @@ async def create_run(request: CreateRunRequest):
 
 
 @app.get("/api/runs")
-async def list_runs(page: int = 1, limit: int = 10, status: str = None,
-                    priority: str = None, sort: str = "date", order: str = "desc",
-                    q: str = None):
+async def list_runs(
+    page: int = 1,
+    limit: int = 10,
+    status: str = None,
+    priority: str = None,
+    sort: str = "date",
+    order: str = "desc",
+    q: str = None,
+):
     all_items = []
     for run_id, run in RUN_STORE.items():
         result = run.get("result", {})
@@ -166,7 +186,9 @@ async def list_runs(page: int = 1, limit: int = 10, status: str = None,
             "tokens_used": result.get("token_count"),
             "model_used": result.get("model_used"),
             "provider": result.get("provider"),
-            "sourceCount": len([k for k in SOURCE_STORE if k.startswith(f"{run_id}_src_")]),
+            "sourceCount": len(
+                [k for k in SOURCE_STORE if k.startswith(f"{run_id}_src_")]
+            ),
         }
         if status and item["status"] != status:
             continue
@@ -185,9 +207,15 @@ async def list_runs(page: int = 1, limit: int = 10, status: str = None,
     total = len(all_items)
     total_pages = max(1, (total + limit - 1) // limit)
     start = (page - 1) * limit
-    paged = all_items[start:start + limit]
+    paged = all_items[start : start + limit]
 
-    return {"items": paged, "total": total, "page": page, "limit": limit, "totalPages": total_pages}
+    return {
+        "items": paged,
+        "total": total,
+        "page": page,
+        "limit": limit,
+        "totalPages": total_pages,
+    }
 
 
 @app.get("/api/runs/{run_id}")
@@ -258,7 +286,11 @@ async def get_session(session_id: str):
     history = SESSION_STORE.get(session_id)
     if history is None:
         raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
-    return {"session_id": session_id, "history": history, "turn_count": len(history) // 2}
+    return {
+        "session_id": session_id,
+        "history": history,
+        "turn_count": len(history) // 2,
+    }
 
 
 @app.delete("/api/sessions/{session_id}")
@@ -289,14 +321,21 @@ async def patch_run(run_id: str, updates: dict):
 @app.get("/api/dashboard/summary")
 async def dashboard_summary():
     total = len(RUN_STORE)
-    completed = sum(1 for r in RUN_STORE.values() if r.get("status") == RUN_STATUS_COMPLETED)
-    running = sum(1 for r in RUN_STORE.values() if r.get("status") == RUN_STATUS_RUNNING)
+    completed = sum(
+        1 for r in RUN_STORE.values() if r.get("status") == RUN_STATUS_COMPLETED
+    )
+    running = sum(
+        1 for r in RUN_STORE.values() if r.get("status") == RUN_STATUS_RUNNING
+    )
     drafts = sum(1 for r in RUN_STORE.values() if r.get("status") == "draft")
     high = sum(1 for r in RUN_STORE.values() if r.get("priority") == "high")
     medium = sum(1 for r in RUN_STORE.values() if r.get("priority") == "medium")
     low = sum(1 for r in RUN_STORE.values() if r.get("priority") == "low")
     return {
-        "totalCases": total, "completed": completed, "running": running, "drafts": drafts,
+        "totalCases": total,
+        "completed": completed,
+        "running": running,
+        "drafts": drafts,
         "priorities": {"high": high, "medium": medium, "low": low},
     }
 
@@ -317,15 +356,17 @@ async def system_activity():
     activities = []
     for run_id, run in RUN_STORE.items():
         result = run.get("result", {})
-        activities.append({
-            "runId": run_id,
-            "type": "query",
-            "query": run.get("query", ""),
-            "status": run.get("status", "running"),
-            "model_used": result.get("model_used"),
-            "provider": result.get("provider"),
-            "timestamp": run.get("createdAt", ""),
-        })
+        activities.append(
+            {
+                "runId": run_id,
+                "type": "query",
+                "query": run.get("query", ""),
+                "status": run.get("status", "running"),
+                "model_used": result.get("model_used"),
+                "provider": result.get("provider"),
+                "timestamp": run.get("createdAt", ""),
+            }
+        )
     return {"activities": activities}
 
 
