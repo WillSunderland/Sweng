@@ -1,21 +1,28 @@
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, AsyncGenerator
+import asyncio
+import json
+import logging
+import random
+import re
+import time
 import uuid
 from datetime import datetime, timezone
-import re
-from graph import app as graph_app
-from semantic_retrieval import SemanticRetriever
-from url_utils import resolve_source_url
-from cache import QueryCache
-import time
 import sys
 import os
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
+from graph import app as graph_app
+from semantic_retrieval import SemanticRetriever
+from url_utils import resolve_source_url
+from cache import QueryCache
 from services.carbon_estimator import estimate_carbon_tons, tons_to_grams
+
+logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Orchestrator API")
 
@@ -28,7 +35,9 @@ app.add_middleware(
 )
 
 
-# Models
+# ─── Models ───────────────────────────────────────────────────────────────────
+
+
 class CreateRunRequest(BaseModel):
     query: str
     chat_history: list = Field(default_factory=list)
@@ -62,23 +71,30 @@ class PatchRunRequest(BaseModel):
         return self.status is None and self.priority is None
 
 
-# Constants
+# ─── Constants ────────────────────────────────────────────────────────────────
+
 RUN_STATUS_RUNNING = "running"
 RUN_STATUS_COMPLETED = "completed"
 RUN_STATUS_DRAFT = "draft"
 DEFAULT_TRUST_SCORE = 85
 DEFAULT_CARBON_G = 0.5
 
-# Priority sort order for backend sorting
 PRIORITY_ORDER = {"high": 0, "medium": 1, "low": 2}
 
-# In-memory stores
+VALID_STATUSES = {"running", "completed", "draft", "in-review"}
+VALID_PRIORITIES = {"high", "medium", "low"}
+
+# ─── In-memory stores ─────────────────────────────────────────────────────────
+
 RUN_STORE = {}
 SOURCE_STORE = {}
 query_cache = QueryCache(ttl_seconds=3600, max_size=100)
 
 
-def get_iso_timestamp():
+# ─── Helpers ──────────────────────────────────────────────────────────────────
+
+
+def get_iso_timestamp() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
@@ -94,60 +110,14 @@ def _infer_priority(query: str) -> str:
     return "medium"
 
 
-@app.post("/api/runs", response_model=RunResponse, status_code=201)
-async def create_run(request: CreateRunRequest):
-    run_id = f"run_{uuid.uuid4().hex[:12]}"
-    created_at = get_iso_timestamp()
-
-    # Use explicitly provided priority; fall back to keyword inference
-    priority = (
-        request.priority
-        if request.priority in ("high", "medium", "low")
-        else _infer_priority(request.query)
-    )
-
-    RUN_STORE[run_id] = {
-        "query": request.query,
-        "createdAt": created_at,
-        "updatedAt": created_at,
-        "status": RUN_STATUS_RUNNING,
-        "priority": priority,
-    }
-
-    cached_result = query_cache.get(request.query)
-    if cached_result:
-        result = cached_result
-        latency_ms = 0  # cached, no real latency
-    else:
-        initial_state = {
-            "query": request.query,
-            "processed_query": "",
-            "documents": [],
-            "answer": "",
-            "model_used": "",
-            "provider_used": "",
-            "token_count": 0,
-            "error": "",
-        }
-        _t0 = time.time()
-        result = await graph_app.ainvoke(initial_state)
-        latency_ms = int((time.time() - _t0) * 1000)
-        query_cache.set(request.query, result)
-
-    carbon_tons = estimate_carbon_tons(
-        result.get("model_used"),
-        result.get("provider_used"),
-    )
-    carbon_g = tons_to_grams(carbon_tons)
-
-    RUN_STORE[run_id]["result"] = result
-    RUN_STORE[run_id]["status"] = RUN_STATUS_COMPLETED
-    RUN_STORE[run_id]["latency_ms"] = latency_ms
-    RUN_STORE[run_id]["carbon_g"] = carbon_g
-    RUN_STORE[run_id]["tokens_used"] = result.get("token_count", 0)
-
+def _store_sources(run_id: str, result: dict) -> None:
+    """
+    Extract documents from a completed run result, build SOURCE_STORE entries
+    (including resolved URLs), and attach sourceIds + documents to the run.
+    """
     documents = result.get("documents", []) or []
     source_ids = []
+
     for doc in documents:
         source_id = doc.get("doc_id") or f"src_{uuid.uuid4().hex[:8]}"
         source_ids.append(source_id)
@@ -176,7 +146,194 @@ async def create_run(request: CreateRunRequest):
     RUN_STORE[run_id]["sourceIds"] = source_ids
     RUN_STORE[run_id]["documents"] = documents
 
+
+def _build_initial_state(query: str) -> dict:
+    return {
+        "query": query,
+        "processed_query": "",
+        "documents": [],
+        "answer": "",
+        "model_used": "",
+        "provider_used": "",
+        "token_count": 0,
+        "error": "",
+    }
+
+
+def _compute_carbon(result: dict) -> float:
+    return round(
+        tons_to_grams(
+            estimate_carbon_tons(result.get("model_used"), result.get("provider_used"))
+        ),
+        4,
+    )
+
+
+# ─── SSE Streaming ────────────────────────────────────────────────────────────
+
+
+async def _generate_run_events(
+    query: str, priority: Optional[str] = None
+) -> AsyncGenerator[str, None]:
+    """
+    Streams SSE events to the frontend as the LangGraph pipeline runs.
+    Also writes the completed run into RUN_STORE so it is available via
+    the normal polling endpoints once the stream finishes.
+    """
+    run_id = f"run_{uuid.uuid4().hex[:12]}"
+    start = time.monotonic()
+    created_at = get_iso_timestamp()
+
+    resolved_priority = (
+        priority if priority in VALID_PRIORITIES else _infer_priority(query)
+    )
+
+    RUN_STORE[run_id] = {
+        "query": query,
+        "createdAt": created_at,
+        "updatedAt": created_at,
+        "status": RUN_STATUS_RUNNING,
+        "priority": resolved_priority,
+    }
+
+    def sse(event_type: str, label: str, **kwargs) -> str:
+        elapsed = round(time.monotonic() - start, 2)
+        payload = json.dumps(
+            {"event": event_type, "label": label, "elapsed": elapsed, **kwargs}
+        )
+        return f"data: {payload}\n\n"
+
+    try:
+        yield sse("init", "Starting analysis...", runId=run_id)
+
+        # ── Cache hit ──────────────────────────────────────────────────────
+        cached = query_cache.get(query)
+        if cached:
+            yield sse("thinking", "Checking cache...")
+            await asyncio.sleep(0.1)
+
+            carbon_g = _compute_carbon(cached)
+            RUN_STORE[run_id]["result"] = cached
+            RUN_STORE[run_id]["status"] = RUN_STATUS_COMPLETED
+            RUN_STORE[run_id]["carbon_g"] = carbon_g
+            RUN_STORE[run_id]["tokens_used"] = cached.get("token_count", 0)
+            RUN_STORE[run_id]["latency_ms"] = 0
+            _store_sources(run_id, cached)
+
+            yield sse(
+                "complete",
+                "Analysis complete",
+                runId=run_id,
+                tokenCount=cached.get("token_count", 0),
+                carbonG=carbon_g,
+            )
+            return
+
+        # ── Live pipeline ──────────────────────────────────────────────────
+        yield sse("thinking", "Thinking...")
+        await asyncio.sleep(random.uniform(5.0, 12.0))
+
+        result: dict = {}
+        t0 = time.monotonic()
+
+        async for chunk in graph_app.astream(_build_initial_state(query)):
+            node_name = next(iter(chunk))
+            node_state = chunk[node_name]
+
+            if node_name == "rewrite":
+                yield sse("searching", "Searching documents...")
+                await asyncio.sleep(2.0)
+
+            elif node_name == "retrieve":
+                doc_count = len(node_state.get("documents") or [])
+                label = f"Reading {doc_count} source{'s' if doc_count != 1 else ''}..."
+                yield sse("reading", label, docCount=doc_count)
+                result.update(node_state)
+                await asyncio.sleep(2.0)
+
+            elif node_name == "generate":
+                yield sse("generating", "Generating answer...")
+                await asyncio.sleep(2.5)
+                result.update(node_state)
+
+        latency_ms = int((time.monotonic() - t0) * 1000)
+        carbon_g = _compute_carbon(result)
+
+        query_cache.set(query, result)
+
+        RUN_STORE[run_id]["result"] = result
+        RUN_STORE[run_id]["status"] = RUN_STATUS_COMPLETED
+        RUN_STORE[run_id]["latency_ms"] = latency_ms
+        RUN_STORE[run_id]["carbon_g"] = carbon_g
+        RUN_STORE[run_id]["tokens_used"] = result.get("token_count", 0)
+        _store_sources(run_id, result)
+
+        yield sse(
+            "complete",
+            "Analysis complete",
+            runId=run_id,
+            tokenCount=result.get("token_count", 0),
+            carbonG=carbon_g,
+        )
+
+    except Exception as e:
+        logger.error("Stream error for run %s: %s", run_id, e)
+        RUN_STORE[run_id]["status"] = "error"
+        yield sse("error", str(e), runId=run_id)
+
+
+# ─── Endpoints ────────────────────────────────────────────────────────────────
+
+
+@app.post("/api/runs", response_model=RunResponse, status_code=201)
+async def create_run(request: CreateRunRequest):
+    run_id = f"run_{uuid.uuid4().hex[:12]}"
+    created_at = get_iso_timestamp()
+
+    priority = (
+        request.priority
+        if request.priority in VALID_PRIORITIES
+        else _infer_priority(request.query)
+    )
+
+    RUN_STORE[run_id] = {
+        "query": request.query,
+        "createdAt": created_at,
+        "updatedAt": created_at,
+        "status": RUN_STATUS_RUNNING,
+        "priority": priority,
+    }
+
+    cached_result = query_cache.get(request.query)
+    if cached_result:
+        result = cached_result
+        latency_ms = 0
+    else:
+        t0 = time.time()
+        result = await graph_app.ainvoke(_build_initial_state(request.query))
+        latency_ms = int((time.time() - t0) * 1000)
+        query_cache.set(request.query, result)
+
+    carbon_g = _compute_carbon(result)
+
+    RUN_STORE[run_id]["result"] = result
+    RUN_STORE[run_id]["status"] = RUN_STATUS_COMPLETED
+    RUN_STORE[run_id]["latency_ms"] = latency_ms
+    RUN_STORE[run_id]["carbon_g"] = carbon_g
+    RUN_STORE[run_id]["tokens_used"] = result.get("token_count", 0)
+    _store_sources(run_id, result)
+
     return {"runId": run_id, "status": RUN_STATUS_RUNNING, "createdAt": created_at}
+
+
+@app.get("/api/runs/stream")
+async def stream_run(query: str, priority: Optional[str] = Query(None)):
+    """SSE endpoint — streams agent thought events while processing a query."""
+    return StreamingResponse(
+        _generate_run_events(query, priority=priority),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @app.get("/api/runs")
@@ -194,8 +351,6 @@ async def list_runs(
         result = run.get("result", {})
         run_status = run.get("status", RUN_STATUS_COMPLETED)
         query_text = run.get("query", "Unknown")
-
-        # Always read stored priority — never re-infer at list time
         stored_priority = run.get("priority") or _infer_priority(query_text)
 
         items.append(
@@ -203,7 +358,7 @@ async def list_runs(
                 "runId": run_id,
                 "title": f"Analysis for: {query_text}",
                 "query": query_text,
-                "status": run_status,
+                "status": run.get("status", RUN_STATUS_COMPLETED),
                 "priority": stored_priority,
                 "createdAt": run["createdAt"],
                 "updatedAt": run.get("updatedAt", run["createdAt"]),
@@ -216,6 +371,7 @@ async def list_runs(
             }
         )
 
+    # Filtering
     if status:
         items = [i for i in items if i["status"] == status]
     if priority:
@@ -228,7 +384,7 @@ async def list_runs(
             if q_lower in i["query"].lower() or q_lower in i["title"].lower()
         ]
 
-    # Sort — name is case-insensitive A→Z, priority uses explicit order, date is newest first
+    # Sorting
     if sort == "name":
         items.sort(key=lambda x: x.get("title", "").lower(), reverse=(order != "asc"))
     elif sort == "priority":
@@ -237,7 +393,7 @@ async def list_runs(
             reverse=(order == "asc"),
         )
     else:
-        # date (default)
+        # date (default) — newest first
         items.sort(key=lambda x: x.get("createdAt", ""), reverse=(order != "asc"))
 
     total = len(items)
@@ -261,6 +417,7 @@ async def get_run(run_id: str):
 
     result = run.get("result", {})
     raw_docs = run.get("documents", result.get("documents", []) or [])
+
     enriched_docs = []
     for doc in raw_docs:
         source_id = doc.get("doc_id") or doc.get("id")
@@ -364,6 +521,14 @@ async def get_stats():
         raise HTTPException(status_code=500, detail=f"Failed to get stats: {e}")
 
 
+@app.get("/health")
+async def health_check():
+    return {"status": "ok"}
+
+
+# ─── Dashboard endpoints ──────────────────────────────────────────────────────
+
+
 @app.get("/api/dashboard/summary")
 async def dashboard_summary():
     total = len(RUN_STORE)
@@ -463,14 +628,16 @@ async def ai_efficiency():
     total_tokens = 0
     model_usage: dict = {}
     provider_usage: dict = {}
+
     for run in RUN_STORE.values():
         result = run.get("result", {})
-        total_carbon_g += DEFAULT_CARBON_G
-        total_tokens += result.get("token_count", 0)
+        total_carbon_g += run.get("carbon_g", DEFAULT_CARBON_G)
+        total_tokens += run.get("tokens_used", result.get("token_count", 0))
         model = result.get("model_used", "unknown")
         provider = result.get("provider_used", "unknown")
         model_usage[model] = model_usage.get(model, 0) + 1
         provider_usage[provider] = provider_usage.get(provider, 0) + 1
+
     total_runs = len(RUN_STORE) or 1
     return {
         "totalCarbonG": round(total_carbon_g, 4),
