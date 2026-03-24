@@ -15,6 +15,7 @@ body {
 button {
   font-family: inherit;
   cursor: pointer;
+  color: var(--text);
 }
 
 a {
@@ -24,4 +25,62 @@ a {
 
 input, textarea {
   font-family: inherit;
+}
+
+/* ===== THEME VARIABLES ===== */
+:root {
+  --nav-bg: rgba(248, 250, 252, 0.85); 
+  --bg: #ffffff;
+  --bg-light: #f8fafc;
+  --bg-secondary: #f5f5f5;
+  --bg-dark: #0a0f1a;
+  --bg-card: #141c2e;
+  --text: #111111;
+  --text-dark: #0f172a;
+  --text-body: #475569;
+  --text-muted: #94a3b8;
+  --border-light: #e2e8f0;
+  --card-bg: #ffffff;
+  --input-bg: #ffffff;
+  /* accent colors stay the same in both modes */
+  --accent-blue: #2563eb;
+  --accent-blue-light: #3b82f6;
+  --accent-green: #10b981;
+  --accent-purple: #8b5cf6;
+  --accent-orange: #f59e0b;
+}
+
+html.dark {
+  --nav-bg: rgba(18, 18, 18, 0.85);
+  --bg: #121212;
+  --bg-light: #1a1a2e;
+  --bg-secondary: #1e1e1e;
+  --bg-dark: #0a0f1a;
+  --bg-card: #141c2e;
+  --text: #ffffff;
+  --text-dark: #f1f5f9;
+  --text-body: #94a3b8;
+  --text-muted: #64748b;
+  --border-light: #2d2d2d;
+  --card-bg: #1e1e1e;
+  --input-bg: #2a2a2a;
+}
+
+*:not(.app-preview-wrapper):not(.app-preview-wrapper *):not(.toggle-thumb) {
+  transition: background-color 0.7s ease, color 0.7s ease, border-color 0.7s ease !important;
+}
+
+.toggle-thumb {
+  transition: transform 0.4s ease !important;
+}
+
+
+input, textarea {
+  color: #111111 !important;
+  background-color: #ffffff !important;
+}
+
+html.dark input, html.dark textarea {
+  color: #ffffff !important;
+  background-color: #2a2a2a !important;
 }
