@@ -1,7 +1,10 @@
 import json
 import logging
+import uuid
+from datetime import datetime, timezone
 
 from django.http import StreamingHttpResponse
+from backend.orchestrator.audit_logger import log_audit
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +27,6 @@ def _get_graph():
     """Lazily import the compiled graph from the FastAPI app context."""
     try:
         from app.main import _compiledGraph
-
         return _compiledGraph
     except Exception as e:
         logger.error("Failed to import compiled graph: %s", e)
@@ -35,7 +37,7 @@ def _sse(event: str, data: dict) -> str:
     return f"event: {event}\ndata: {json.dumps(data)}\n\n"
 
 
-def _stream_events(query: str):
+def _stream_events(query: str, request_id: str = None):
     """
     Synchronous generator that runs the async LangGraph pipeline
     and yields SSE-formatted strings.
@@ -67,6 +69,10 @@ def _stream_events(query: str):
 
         emitted_states = set()
 
+        final_answer = ""
+        sources = []
+        start_time = datetime.now(timezone.utc)
+
         # Stream node-level events from LangGraph
         async for event in graph.astream_events(initial_state, version="v2"):
             kind = event.get("event")
@@ -85,13 +91,32 @@ def _stream_events(query: str):
                 answer = response.get("answer", "")
 
                 if answer:
+                    final_answer = answer
+
                     for token in answer.split():
                         yield _sse("token", {"token": token})
                         await asyncio.sleep(0.02)
 
+        # ---- AUDIT LOGGING ----
+        end_time = datetime.now(timezone.utc)
+        latency_ms = (end_time - start_time).total_seconds() * 1000
+
+        audit_log = {
+            "request_id": request_id,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "query": query,
+            "sources": sources,
+            "response": final_answer,
+            "model_used": "streaming-llm",
+            "latency_ms": latency_ms,
+        }
+
+        log_audit(audit_log)
+        # -----------------------
+
         yield _sse("done", {"status": "complete"})
 
-    # Run the async generator in a new event loop and collect yields
+    # Run async generator and collect outputs
     async def _collect():
         results = []
         async for chunk in _run():
@@ -116,9 +141,13 @@ def streamResponse(request):
 
         return StreamingHttpResponse(empty(), content_type="text/event-stream")
 
+    request_id = str(uuid.uuid4())
+
     response = StreamingHttpResponse(
-        _stream_events(query), content_type="text/event-stream"
+        _stream_events(query, request_id),
+        content_type="text/event-stream"
     )
     response["Cache-Control"] = "no-cache"
     response["X-Accel-Buffering"] = "no"
+
     return response
