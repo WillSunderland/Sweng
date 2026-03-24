@@ -4,6 +4,7 @@ import logging
 from typing import Any
 
 from opensearchpy import OpenSearch
+from sentence_transformers import CrossEncoder
 
 from app.config import getSettings
 from app.graph.state import GraphState
@@ -11,6 +12,15 @@ from app.graph.state import GraphState
 logger = logging.getLogger(__name__)
 settings = getSettings()
 
+_cross_encoder_model = None
+
+
+def _get_cross_encoder() -> CrossEncoder:
+    global _cross_encoder_model
+    if _cross_encoder_model is None:
+        logger.info("Loading cross-encoder model: cross-encoder/ms-marco-MiniLM-L-6-v2")
+        _cross_encoder_model = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2")
+    return _cross_encoder_model
 
 def _reasoning_step(
     state: GraphState, node: str, detail: str, status: str = "completed"
@@ -54,6 +64,78 @@ def _build_context_summary(hits: list[dict[str, Any]]) -> str:
         snippet = chunk[:220]
         lines.append(f"{title}: {snippet}")
     return "\n".join(lines)
+
+def _text_similarity(text1: str, text2: str) -> float:
+    """Jaccard similarity between two texts based on word overlap."""
+    words1 = set(text1.lower().split())
+    words2 = set(text2.lower().split())
+    if not words1 or not words2:
+        return 0.0
+    return len(words1 & words2) / len(words1 | words2)
+
+
+def _mmr_rerank(hits: list[dict[str, Any]], top_k: int, lambda_param: float = 0.7) -> list[dict[str, Any]]:
+    """
+    Maximum Marginal Relevance re-ranking using text similarity.
+    Balances relevance (BM25 score) with diversity across chunks.
+    """
+    if len(hits) <= top_k:
+        return hits
+
+    top_score = hits[0].get("_score", 1.0) or 1.0
+    selected: list[dict[str, Any]] = []
+    remaining = list(hits)
+
+    for _ in range(top_k):
+        if not remaining:
+            break
+
+        if not selected:
+            selected.append(remaining.pop(0))
+            continue
+
+        best_idx = None
+        best_score = -float("inf")
+
+        for i, candidate in enumerate(remaining):
+            candidate_text = candidate.get("_source", {}).get("chunk_text", "")
+            rel = (candidate.get("_score", 0.0) or 0.0) / top_score
+
+            max_sim = max(
+                _text_similarity(candidate_text, s.get("_source", {}).get("chunk_text", ""))
+                for s in selected
+            )
+
+            mmr_score = lambda_param * rel - (1 - lambda_param) * max_sim
+
+            if mmr_score > best_score:
+                best_score = mmr_score
+                best_idx = i
+
+        if best_idx is not None:
+            selected.append(remaining.pop(best_idx))
+
+    return selected
+
+
+def _cross_encoder_rerank(query: str, hits: list[dict[str, Any]], top_k: int) -> list[dict[str, Any]]:
+    """
+    Cross-encoder reranking — scores each (query, chunk) pair together
+    for more accurate relevance than BM25 or embedding similarity alone.
+    """
+    if len(hits) <= top_k:
+        return hits
+
+    try:
+        model = _get_cross_encoder()
+        pairs = [(query, h.get("_source", {}).get("chunk_text", "")) for h in hits]
+        scores = model.predict(pairs)
+
+        scored = sorted(zip(hits, scores), key=lambda x: x[1], reverse=True)
+        return [h for h, _ in scored[:top_k]]
+    except Exception as exc:
+        logger.warning("Cross-encoder failed, falling back to MMR results: %s", exc)
+        return hits[:top_k]
 
 
 def inputNode(state: GraphState) -> dict[str, Any]:
@@ -112,8 +194,10 @@ def makeSearchNode(client: OpenSearch, index: str):
         search_iteration = int(state.get("search_iteration", 0)) + 1
 
         try:
+             # Step 1: BM25 — fetch large candidate pool
+            fetch_k = max(settings.search_top_k * 4, 20)
             body = {
-                "size": settings.search_top_k,
+                "size": fetch_k,
                 "query": {
                     "multi_match": {
                         "query": query,
@@ -128,7 +212,14 @@ def makeSearchNode(client: OpenSearch, index: str):
                 },
             }
             raw = client.search(index=index, body=body)
-            hits = raw.get("hits", {}).get("hits", [])
+            raw_hits = raw.get("hits", {}).get("hits", [])
+
+            # Step 2: MMR — pick diverse candidates (fetch_k → mmr_k)
+            mmr_k = min(len(raw_hits), settings.search_top_k * 2)
+            mmr_hits = _mmr_rerank(raw_hits, top_k=mmr_k)
+
+            # Step 3: Cross-encoder — pick most relevant (mmr_k → top_k)
+            hits = _cross_encoder_rerank(query, mmr_hits, top_k=settings.search_top_k)
             accumulated = _merge_hits(list(state.get("accumulatedSources", [])), hits)
             unique_titles = len(
                 {
@@ -149,7 +240,7 @@ def makeSearchNode(client: OpenSearch, index: str):
                 "reasoning_steps": _reasoning_step(
                     state,
                     "search",
-                    f"Search iteration {search_iteration} returned {len(hits)} hits across {unique_titles} unique titles.",
+                    f"Search iteration {search_iteration}: BM25 fetched {len(raw_hits)}, MMR selected {len(mmr_hits)} diverse, cross-encoder ranked to {len(hits)} across {unique_titles} unique titles.",
                 ),
             }
         except Exception as exc:
