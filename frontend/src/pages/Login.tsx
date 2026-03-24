@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import eye from "../assets/closedEye.png";
 import eyeOff from "../assets/openEye.png";
+import { API_BASE_URL } from "../constants/apiConfig";
 
 export default function Login() {
   const navigate = useNavigate();
@@ -15,7 +16,7 @@ export default function Login() {
     setError("");
 
     try {
-      const res = await fetch("http://localhost:8080/api/auth/login", {
+      const res = await fetch(`${API_BASE_URL}/api/auth/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password }),

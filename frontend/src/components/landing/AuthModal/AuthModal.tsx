@@ -21,8 +21,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({ view, onClose, onSwitchVie
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
 
       <div
+        data-testid="modal-panel"
         className="relative w-[440px] rounded-2xl shadow-2xl p-8 animate-in zoom-in-95 duration-200"
-style={{ background: 'var(--card-bg)', color: 'var(--text)' }}
+        style={{ background: 'var(--card-bg)', color: 'var(--text)' }}
         onClick={(e) => e.stopPropagation()}
       >
         <button

@@ -23,6 +23,11 @@ services:
       - STATE_CODE=${STATE_CODE:-TX}
       - SEARCH_K=${SEARCH_K:-5}
       - FORCE_HF_ONLY=${FORCE_HF_ONLY:-false}
+      # LangSmith Tracing
+      - LANGCHAIN_TRACING_V2=${LANGCHAIN_TRACING_V2:-false}
+      - LANGCHAIN_ENDPOINT=${LANGCHAIN_ENDPOINT:-https://api.smith.langchain.com}
+      - LANGCHAIN_API_KEY=${LANGCHAIN_API_KEY:-}
+      - LANGCHAIN_PROJECT=${LANGCHAIN_PROJECT:-propylon-sweng-group16}
     depends_on:
       - mcp-server
       - hf-server
@@ -36,13 +41,23 @@ services:
     environment:
       - ELASTICSEARCH_URL=http://elasticsearch:9200
 
-  # 3. The Frontend (React UI)
+  # 3. Django Auth Server
+  django:
+    build: ./backend/django_server
+    environment:
+      - SECRET_KEY=${DJANGO_SECRET_KEY:-django-insecure-dev-key-change-in-prod}
+      - DEBUG=True
+    command: >
+      sh -c "python manage.py migrate --run-syncdb && python manage.py runserver 0.0.0.0:8000"
+
+  # 4. The Frontend (React UI + Nginx reverse proxy)
   frontend:
     build: ./frontend
     ports:
       - "3000:80"
     depends_on:
       - orchestrator
+      - django
 
   # 4. ElasticSearch (Local dev instance)
   elasticsearch:

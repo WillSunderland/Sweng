@@ -8,5 +8,6 @@ openai
 httpx
 tenacity
 pydantic-settings
+langsmith>=0.1.0
 numpy
 sse-starlette
