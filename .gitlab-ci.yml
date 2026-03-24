@@ -55,7 +55,7 @@ frontend-lint:
       - .cache/npm
   before_script:
     - cd frontend
-    - npm ci
+    - npm install
   script:
     - npm run lint
 
@@ -111,7 +111,7 @@ frontend-test:
       - .cache/npm
   before_script:
     - cd frontend
-    - npm ci
+    - npm install
   script:
     - npx vitest run --passWithNoTests --reporter=junit --outputFile=../report.xml
   artifacts:
@@ -203,6 +203,6 @@ frontend-build:
       - .cache/npm
   before_script:
     - cd frontend
-    - npm ci
+    - npm install
   script:
     - npm run build
