@@ -28,8 +28,11 @@ def _validate_citations(cited_titles: list[str], retrieved_sources: list[dict]) 
         else:
             hallucinated.append(title)
     uncited = [
-        t for t in retrieved_titles
-        if not any(t.lower() in c.lower() or c.lower() in t.lower() for c in cited_titles)
+        t
+        for t in retrieved_titles
+        if not any(
+            t.lower() in c.lower() or c.lower() in t.lower() for c in cited_titles
+        )
     ]
     total = len(cited_titles)
     return {

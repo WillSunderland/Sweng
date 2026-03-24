@@ -39,8 +39,13 @@
     "postcss": "^8.5.6",
     "tailwindcss": "^3.4.19",
     "typescript": "~5.9.3",
-    "typescript-eslint": "^8.46.4",
+    "typescript-eslint": "^8.57.1",
     "vite": "^7.2.4",
     "vitest": "^4.0.18"
+  },
+  "overrides": {
+    "@typescript-eslint/utils": "8.57.1",
+    "@typescript-eslint/eslint-plugin": "8.57.1",
+    "@typescript-eslint/type-utils": "8.57.1"
   }
 }

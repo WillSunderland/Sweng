@@ -9,3 +9,4 @@ httpx
 tenacity
 pydantic-settings
 numpy
+sse-starlette

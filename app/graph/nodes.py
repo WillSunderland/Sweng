@@ -12,7 +12,6 @@ from app.graph.state import GraphState
 logger = logging.getLogger(__name__)
 settings = getSettings()
 
-# Loaded once at module level — avoids reloading on every request
 _cross_encoder_model = None
 
 
@@ -22,7 +21,6 @@ def _get_cross_encoder() -> CrossEncoder:
         logger.info("Loading cross-encoder model: cross-encoder/ms-marco-MiniLM-L-6-v2")
         _cross_encoder_model = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2")
     return _cross_encoder_model
-
 
 def _reasoning_step(
     state: GraphState, node: str, detail: str, status: str = "completed"
@@ -66,7 +64,6 @@ def _build_context_summary(hits: list[dict[str, Any]]) -> str:
         snippet = chunk[:220]
         lines.append(f"{title}: {snippet}")
     return "\n".join(lines)
-
 
 def _text_similarity(text1: str, text2: str) -> float:
     """Jaccard similarity between two texts based on word overlap."""
@@ -197,7 +194,7 @@ def makeSearchNode(client: OpenSearch, index: str):
         search_iteration = int(state.get("search_iteration", 0)) + 1
 
         try:
-            # Step 1: BM25 — fetch large candidate pool
+             # Step 1: BM25 — fetch large candidate pool
             fetch_k = max(settings.search_top_k * 4, 20)
             body = {
                 "size": fetch_k,
@@ -223,7 +220,6 @@ def makeSearchNode(client: OpenSearch, index: str):
 
             # Step 3: Cross-encoder — pick most relevant (mmr_k → top_k)
             hits = _cross_encoder_rerank(query, mmr_hits, top_k=settings.search_top_k)
-
             accumulated = _merge_hits(list(state.get("accumulatedSources", [])), hits)
             unique_titles = len(
                 {

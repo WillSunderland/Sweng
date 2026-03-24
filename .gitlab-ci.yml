@@ -165,7 +165,7 @@ backend-integration-tests:
   stage: test
   image: python:3.11-slim
   tags:
-    - docker
+    - docker  
   variables:
     PYTHONPATH: "."
   cache:
