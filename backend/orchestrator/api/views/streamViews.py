@@ -27,6 +27,7 @@ def _get_graph():
     """Lazily import the compiled graph from the FastAPI app context."""
     try:
         from app.main import _compiledGraph
+
         return _compiledGraph
     except Exception as e:
         logger.error("Failed to import compiled graph: %s", e)
@@ -144,8 +145,7 @@ def streamResponse(request):
     request_id = str(uuid.uuid4())
 
     response = StreamingHttpResponse(
-        _stream_events(query, request_id),
-        content_type="text/event-stream"
+        _stream_events(query, request_id), content_type="text/event-stream"
     )
     response["Cache-Control"] = "no-cache"
     response["X-Accel-Buffering"] = "no"
