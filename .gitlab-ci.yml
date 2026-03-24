@@ -102,6 +102,30 @@ backend-integration-tests:
       fi
       exit $status
 
+frontend-unit-tests:
+  stage: test
+  image: node:20-alpine
+  tags:
+    - docker
+  needs:
+    - frontend-lint
+  before_script:
+    - cd frontend
+    - npm ci
+  script:
+    - npm run test:coverage
+  coverage: '/^All files\s*\|\s*[\d.]+\s*\|\s*[\d.]+\s*\|\s*[\d.]+\s*\|\s*([\d.]+)/'
+  artifacts:
+    when: always
+    reports:
+      coverage_report:
+        coverage_format: cobertura
+        path: frontend/coverage/cobertura-coverage.xml
+    paths:
+      - frontend/coverage/
+    expire_in: 7 days
+
+    
 frontend-build:
   stage: build
   image: node:20-alpine

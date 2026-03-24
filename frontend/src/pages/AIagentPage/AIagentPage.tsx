@@ -21,6 +21,13 @@ interface ParsedResponse {
   citations: Citation[];
 }
 
+// Green metrics captured per query from real backend values (polling fallback path)
+interface GreenMetrics {
+  carbonG: number;
+  tokensUsed: number;
+  latencyMs: number;
+}
+
 interface Message {
   id: number;
   type: 'user' | 'assistant' | 'error';
@@ -29,7 +36,8 @@ interface Message {
   time: string;
   runId?: string;
   routedTo?: string;
-  streamEvents?: AgentEvent[];
+  metrics?: GreenMetrics;       // polling path carbon data
+  streamEvents?: AgentEvent[];  // SSE path stage history
 }
 
 interface RetrievedDocument {
@@ -82,6 +90,15 @@ interface RunResult {
   references?: {
     sourceIds: string[];
   };
+  // Real green metrics from backend (used when SSE streaming is unavailable)
+  reasoningPath?: {
+    carbonTotalG?: number;
+    latencyMs?: number;
+    tokensUsed?: number;
+    trustScore?: number;
+    engine?: string;
+    steps?: unknown[];
+  };
 }
 
 interface SourceDetail {
@@ -125,64 +142,41 @@ const STREAM_TIMEOUT_MS = 90_000;
 const nowStr = (): string =>
   new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
-/**
- * Aggressively strip ALL inline citation noise and HTML, then decode entities.
- * Handles: [*], [**], [^], [^1], [118-hr-8775_0], (*), (**), (^), "[*][*][^]", etc.
- */
 function cleanText(raw: string): string {
   if (!raw) return '';
   return raw
-    // Remove HTML tags
     .replace(/<\/?[a-zA-Z][^>]*>/g, ' ')
-    // Remove ALL bracket groups: [anything] — catches [*], [**], [^], [^1], [id], etc.
     .replace(/\[[^\]]*\]/g, '')
-    // Remove parenthetical noise markers: (*), (**), (^), (†), (1), etc.
     .replace(/\([*^†‡§¶\d]+\)/g, '')
-    // Remove stray asterisks (1 or more) that remain after bracket removal
     .replace(/\*+/g, '')
-    // Remove stray carets
     .replace(/\^+/g, '')
-    // Decode HTML entities
     .replace(/&amp;/g, '&')
     .replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>')
     .replace(/&nbsp;/g, ' ')
     .replace(/&quot;/g, '"')
     .replace(/&#39;/g, "'")
-    // Collapse multiple punctuation/spaces left behind
     .replace(/\.{2,}/g, '.')
     .replace(/\s{2,}/g, ' ')
     .trim();
 }
 
-/**
- * Build a congress.gov URL from a congressional bill ID.
- * Pattern:  {congress}-{type}-{number}  or  {congress}-{type}-{number}_{chunk}
- */
 function congressUrl(id: string): string | undefined {
   const base = id.replace(/_\d+$/, '');
   const match = base.match(/^(\d+)-(hr|s|hjres|sjres|hres|sres|hconres|sconres)-(\d+)$/i);
   if (!match) return undefined;
-
   const [, congress, typeRaw, number] = match;
   const typeMap: Record<string, string> = {
-    hr: 'house-bill',
-    s: 'senate-bill',
-    hjres: 'house-joint-resolution',
-    sjres: 'senate-joint-resolution',
-    hres: 'house-resolution',
-    sres: 'senate-resolution',
-    hconres: 'house-concurrent-resolution',
-    sconres: 'senate-concurrent-resolution',
+    hr: 'house-bill', s: 'senate-bill',
+    hjres: 'house-joint-resolution', sjres: 'senate-joint-resolution',
+    hres: 'house-resolution', sres: 'senate-resolution',
+    hconres: 'house-concurrent-resolution', sconres: 'senate-concurrent-resolution',
   };
   const billType = typeMap[typeRaw.toLowerCase()];
   if (!billType) return undefined;
   return `https://www.congress.gov/bill/${congress}th-congress/${billType}/${number}`;
 }
 
-/**
- * Resolve a URL from any available data about a source/document.
- */
 function resolveUrl(
   id: string,
   rawSource?: string,
@@ -191,51 +185,29 @@ function resolveUrl(
   billNumber?: string,
   congress?: string,
 ): string | undefined {
-  
   if (rawSource && /^https?:\/\//.test(rawSource)) return rawSource;
-
-  if (billId) {
-    const fromBillId = congressUrl(billId);
-    if (fromBillId) return fromBillId;
-  }
-
+  if (billId) { const u = congressUrl(billId); if (u) return u; }
   if (billType && billNumber && congress) {
-    const synth = `${congress}-${billType}-${billNumber}`;
-    const fromFields = congressUrl(synth);
-    if (fromFields) return fromFields;
+    const u = congressUrl(`${congress}-${billType}-${billNumber}`);
+    if (u) return u;
   }
-
-  const fromId = congressUrl(id);
-  if (fromId) return fromId;
-
-  return undefined;
+  return congressUrl(id);
 }
 
-/**
- * Build a human-readable title from a bill ID.
- * "118-hr-8775_0" → "H.R. 8775 (118th Congress)"
- */
 function titleFromId(id: string): string {
   const base = id.replace(/_\d+$/, '');
   const match = base.match(/^(\d+)-(hr|s|hjres|sjres|hres|sres|hconres|sconres)-(\d+)$/i);
   if (!match) return id;
-
   const [, congress, typeRaw, number] = match;
   const labelMap: Record<string, string> = {
-    hr: `H.R. ${number}`,
-    s: `S. ${number}`,
-    hjres: `H.J.Res. ${number}`,
-    sjres: `S.J.Res. ${number}`,
-    hres: `H.Res. ${number}`,
-    sres: `S.Res. ${number}`,
-    hconres: `H.Con.Res. ${number}`,
-    sconres: `S.Con.Res. ${number}`,
+    hr: `H.R. ${number}`, s: `S. ${number}`,
+    hjres: `H.J.Res. ${number}`, sjres: `S.J.Res. ${number}`,
+    hres: `H.Res. ${number}`, sres: `S.Res. ${number}`,
+    hconres: `H.Con.Res. ${number}`, sconres: `S.Con.Res. ${number}`,
   };
-  const label = labelMap[typeRaw.toLowerCase()] ?? id;
-  return `${label} (${congress}th Congress)`;
+  return `${labelMap[typeRaw.toLowerCase()] ?? id} (${congress}th Congress)`;
 }
 
-/** Fetch full source details from the backend for a given sourceId */
 async function fetchSourceDetail(sourceId: string): Promise<SourceDetail | null> {
   try {
     const res = await fetch(`${BASE_URL}/api/sources/${sourceId}`);
@@ -246,36 +218,24 @@ async function fetchSourceDetail(sourceId: string): Promise<SourceDetail | null>
   }
 }
 
-/** Build citations by fetching full source details from the backend */
 async function buildCitationsFromSourceIds(sourceIds: string[]): Promise<Citation[]> {
   const seen = new Set<string>();
   const citations: Citation[] = [];
-
   for (const id of sourceIds) {
     if (seen.has(id)) continue;
     seen.add(id);
-
     const detail = await fetchSourceDetail(id);
-
     const title = detail?.title || titleFromId(id);
     const excerpt = detail?.fullText ? cleanText(detail.fullText).slice(0, 220) : undefined;
-
     const url = resolveUrl(
-      id,
-      undefined,
-      detail?.billId,
-      detail?.billType,
-      detail?.billNumber,
-      detail?.billId?.match(/^(\d+)-/)?.[1],
+      id, undefined, detail?.billId, detail?.billType,
+      detail?.billNumber, detail?.billId?.match(/^(\d+)-/)?.[1],
     );
-
     citations.push({ id, title, url, excerpt });
   }
-
   return citations;
 }
 
-/** Build citations directly from embedded document objects */
 function buildCitationsFromDocs(docs: RetrievedDocument[]): Citation[] {
   const seen = new Set<string>();
   return docs
@@ -283,75 +243,41 @@ function buildCitationsFromDocs(docs: RetrievedDocument[]): Citation[] {
       const id = doc.id ?? doc._id ?? doc.doc_id ?? String(i + 1);
       if (seen.has(id)) return null;
       seen.add(id);
-
       const rawSource = doc.url ?? doc.source ?? doc.metadata?.url ?? doc.metadata?.source;
-
-      const title =
-        doc.title ??
-        doc.metadata?.title ??
-        titleFromId(id);
-
+      const title = doc.title ?? doc.metadata?.title ?? titleFromId(id);
       const url = resolveUrl(
-        id,
-        rawSource as string | undefined,
-        doc.bill_id,
-        doc.bill_type,
-        doc.bill_number,
-        doc.bill_id?.match(/^(\d+)-/)?.[1],
+        id, rawSource as string | undefined, doc.bill_id,
+        doc.bill_type, doc.bill_number, doc.bill_id?.match(/^(\d+)-/)?.[1],
       );
-
-      const rawExcerpt = doc.text ?? doc.content ?? doc.chunk_text ?? '';
-      const excerpt = cleanText(rawExcerpt).slice(0, 220) || undefined;
-
+      const excerpt = cleanText(doc.text ?? doc.content ?? doc.chunk_text ?? '').slice(0, 220) || undefined;
       return { id, title, url, excerpt } as Citation;
     })
     .filter((c): c is Citation => c !== null);
 }
 
-/** Extract the main answer text from the run result. */
 function extractAnswer(run: RunResult): string {
   if (run.answer) return cleanText(run.answer);
-
   let text = cleanText(run.agentCommentary?.content ?? '');
   text = text.replace(/^Graph Result:\s*/i, '').trim();
-
   const msgMatch = text.match(/'messages':\s*\[([^\]]+)\]/);
   if (msgMatch) {
     text = msgMatch[1].replace(/'/g, '').split(',').map((s) => s.trim()).filter(Boolean).join(' ');
   }
-
   if (text && text !== 'No result yet') return text;
   return cleanText(run.keyFinding?.summary ?? '');
 }
 
-/** Full parser: run result → {summary, bullets, citations} */
 async function parseResponse(run: RunResult): Promise<ParsedResponse> {
   const text = extractAnswer(run);
-
   if (!text) {
-    return {
-      summary: 'The analysis completed but did not produce a readable response.',
-      bullets: [],
-      citations: [],
-    };
+    return { summary: 'The analysis completed but did not produce a readable response.', bullets: [], citations: [] };
   }
-
-  const sentences = text
-    .split(/(?<=[.!?])\s+/)
-    .map((s) => s.trim())
-    .filter((s) => s.length > 0);
-
+  const sentences = text.split(/(?<=[.!?])\s+/).map((s) => s.trim()).filter((s) => s.length > 0);
   const summary = sentences[0] ?? text;
   const bullets = sentences.length > 1 ? sentences.slice(1) : [];
-
   let citations: Citation[] = [];
-
-  if (run.documents && run.documents.length > 0) {
-    citations = buildCitationsFromDocs(run.documents);
-  } else if (run.references?.sourceIds && run.references.sourceIds.length > 0) {
-    citations = await buildCitationsFromSourceIds(run.references.sourceIds);
-  }
-
+  if (run.documents && run.documents.length > 0) citations = buildCitationsFromDocs(run.documents);
+  else if (run.references?.sourceIds?.length) citations = await buildCitationsFromSourceIds(run.references.sourceIds);
   return { summary, bullets, citations };
 }
 
@@ -471,9 +397,26 @@ function useAgentStream() {
   return { ...state, startStream, reset };
 }
 
-// ─── AgentThinkingBlock ───────────────────────────────────────────────────────
+// ─── useLiveTimer ─────────────────────────────────────────────────────────────
 
-// Contextual AI inner-monologue phrases per stage
+function useLiveTimer(isActive: boolean): number {
+  const [elapsed, setElapsed] = useState(0);
+  const startRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (!isActive) { startRef.current = null; return; }
+    startRef.current = Date.now();
+    const id = setInterval(() => {
+      if (startRef.current !== null) setElapsed((Date.now() - startRef.current) / 1000);
+    }, 100);
+    return () => clearInterval(id);
+  }, [isActive]);
+
+  return elapsed;
+}
+
+// ─── Stage metadata ───────────────────────────────────────────────────────────
+
 const STAGE_THOUGHTS: Record<AgentEventType, string[]> = {
   init:       ['Initialising legal intelligence engine...', 'Loading legislative knowledge base...'],
   thinking:   ['Parsing query intent and jurisdiction...', 'Identifying key legal concepts...', 'Mapping statutory relationships...', 'Classifying legal domain and scope...'],
@@ -483,28 +426,6 @@ const STAGE_THOUGHTS: Record<AgentEventType, string[]> = {
   complete:   ['Analysis complete.'],
   error:      ['Analysis failed.'],
 };
-
-// Client-side live elapsed timer (ticks every 100 ms while active)
-function useLiveTimer(isActive: boolean): number {
-  const [elapsed, setElapsed] = useState(0);
-  const startRef = useRef<number | null>(null);
-
-  useEffect(() => {
-    if (!isActive) {
-      startRef.current = null;
-      return;
-    }
-    startRef.current = Date.now();
-    const id = setInterval(() => {
-      if (startRef.current !== null) {
-        setElapsed((Date.now() - startRef.current) / 1000);
-      }
-    }, 100);
-    return () => clearInterval(id);
-  }, [isActive]);
-
-  return elapsed;
-}
 
 const STAGE_META: Partial<Record<AgentEventType, { Icon: React.ElementType }>> = {
   init:       { Icon: Cpu },
@@ -516,7 +437,6 @@ const STAGE_META: Partial<Record<AgentEventType, { Icon: React.ElementType }>> =
   error:      { Icon: AlertCircle },
 };
 
-// Per-step accent colours for visual variety
 const STEP_ACCENT: Partial<Record<AgentEventType, string>> = {
   thinking:   'var(--accent-blue)',
   searching:  'var(--accent-purple)',
@@ -534,12 +454,7 @@ const CompletedThoughtCard: React.FC<{
   const Icon = STAGE_META[event.event]?.Icon ?? Cpu;
   const color = STEP_ACCENT[event.event] ?? 'var(--accent-green)';
   const thought = (STAGE_THOUGHTS[event.event] ?? [])[0] ?? '';
-
-  // True stage duration = time from this event being emitted to the next one being emitted.
-  // Falls back to event.elapsed (cumulative) when no next event is available.
-  const stageDuration = nextElapsed !== undefined
-    ? nextElapsed - event.elapsed
-    : event.elapsed;
+  const stageDuration = nextElapsed !== undefined ? nextElapsed - event.elapsed : event.elapsed;
 
   return (
     <div className="tc-wrapper">
@@ -580,7 +495,7 @@ const CompletedThoughtCard: React.FC<{
   );
 };
 
-// ─── AgentThinkingBlock (active step card) ────────────────────────────────────
+// ─── AgentThinkingBlock ───────────────────────────────────────────────────────
 
 const AgentThinkingBlock: React.FC<{
   currentEvent: AgentEvent | null;
@@ -599,10 +514,7 @@ const AgentThinkingBlock: React.FC<{
   useEffect(() => {
     const eventType = effectiveEvent.event;
     if (eventType === 'complete' || eventType === 'error') return;
-    setTimeout(() => {
-      setThoughtIdx(0);
-      setThoughtKey((k) => k + 1);
-    }, 0);
+    setTimeout(() => { setThoughtIdx(0); setThoughtKey((k) => k + 1); }, 0);
     const thoughts = STAGE_THOUGHTS[eventType] ?? [];
     if (thoughts.length <= 1) return;
     const id = setInterval(() => {
@@ -641,7 +553,7 @@ const AgentThinkingBlock: React.FC<{
           </span>
           {!isComplete && !isError && (
             <div className="tc-neural-bars" aria-hidden="true">
-              {[0,1,2,3,4].map((i) => (
+              {[0, 1, 2, 3, 4].map((i) => (
                 <span key={i} className="tc-neural-bar" style={{ animationDelay: `${i * 0.13}s`, background: color }} />
               ))}
             </div>
@@ -650,9 +562,7 @@ const AgentThinkingBlock: React.FC<{
         <span className="tc-time">{displayElapsed.toFixed(2)}s</span>
       </div>
 
-      <p className="tc-desc">
-        {isComplete ? 'Analysis complete' : isError ? effectiveEvent.label : effectiveEvent.label}
-      </p>
+      <p className="tc-desc">{isComplete ? 'Analysis complete' : effectiveEvent.label}</p>
 
       {!isComplete && !isError && (
         <>
@@ -684,7 +594,10 @@ const AgentThinkingBlock: React.FC<{
 
 // ─── FormattedResponse ────────────────────────────────────────────────────────
 
-const FormattedResponse: React.FC<{ parsed: ParsedResponse }> = ({ parsed }) => {
+const FormattedResponse: React.FC<{
+  parsed: ParsedResponse;
+  onCitationClick: (c: Citation) => void;
+}> = ({ parsed, onCitationClick }) => {
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
   return (
@@ -699,7 +612,10 @@ const FormattedResponse: React.FC<{ parsed: ParsedResponse }> = ({ parsed }) => 
 
       {parsed.citations.length > 0 && (
         <div className="response-citations">
-          <p className="citations-label"><Paperclip size={11} strokeWidth={2} style={{ display: 'inline', marginRight: '5px', verticalAlign: 'middle' }} />Sources</p>
+          <p className="citations-label">
+            <Paperclip size={11} strokeWidth={2} style={{ display: 'inline', marginRight: '5px', verticalAlign: 'middle' }} />
+            Sources
+          </p>
           <div className="citations-list">
             {parsed.citations.map((c) => (
               <div key={c.id} className="citation-item">
@@ -713,10 +629,10 @@ const FormattedResponse: React.FC<{ parsed: ParsedResponse }> = ({ parsed }) => 
                       {expandedId === c.id ? '▼' : '▶'}
                     </button>
                   )}
-
                   <span className="citation-id">[{c.id}]</span>
-                  <span className="citation-title">{c.title}</span>
-
+                  <button className="citation-title-btn" onClick={() => onCitationClick(c)}>
+                    {c.title}
+                  </button>
                   {c.url ? (
                     <a
                       href={c.url}
@@ -731,7 +647,6 @@ const FormattedResponse: React.FC<{ parsed: ParsedResponse }> = ({ parsed }) => 
                     <span className="citation-no-link">No link</span>
                   )}
                 </div>
-
                 {expandedId === c.id && c.excerpt && (
                   <p className="citation-excerpt">"{c.excerpt}…"</p>
                 )}
@@ -740,12 +655,11 @@ const FormattedResponse: React.FC<{ parsed: ParsedResponse }> = ({ parsed }) => 
           </div>
         </div>
       )}
-
     </div>
   );
 };
 
-// ─── Research Tasks (Empty State) ────────────────────────────────────────────
+// ─── Research Tasks (Empty State) ─────────────────────────────────────────────
 
 interface ResearchTask {
   icon: 'regulatory' | 'compliance' | 'research' | 'contract';
@@ -822,7 +736,6 @@ interface ReasoningStep {
   status: 'done' | 'active' | 'pending';
   elapsed?: number;
   tags?: string[];
-  resultCount?: string;
   progress?: number;
   Icon: React.ElementType;
 }
@@ -833,7 +746,10 @@ const ReasoningPanel: React.FC<{
   currentEvent?: AgentEvent | null;
   events?: AgentEvent[];
   carbonG?: number;
-}> = ({ routedTo, isTyping, currentEvent, events = [], carbonG }) => {
+  // Polling-path fallback metrics
+  sessionMetrics?: { totalCarbonG: number; totalTokens: number; queryCount: number };
+  lastMetrics?: GreenMetrics;
+}> = ({ routedTo, isTyping, currentEvent, events = [], carbonG, sessionMetrics, lastMetrics }) => {
   const liveElapsed = useLiveTimer(!!isTyping);
 
   const ORDER: AgentEventType[] = ['init', 'thinking', 'searching', 'reading', 'generating', 'complete'];
@@ -850,12 +766,14 @@ const ReasoningPanel: React.FC<{
 
   const getElapsed = (e: AgentEventType) => events.find((ev) => ev.event === e)?.elapsed;
 
-  const docCount   = currentEvent?.docCount ?? events.find((e) => e.event === 'reading')?.docCount;
-  const tokenCount = events.find((e) => e.event === 'complete')?.tokenCount ?? currentEvent?.tokenCount;
+  const docCount     = currentEvent?.docCount ?? events.find((e) => e.event === 'reading')?.docCount;
+  const tokenCount   = events.find((e) => e.event === 'complete')?.tokenCount ?? currentEvent?.tokenCount;
   const totalElapsed = events.find((e) => e.event === 'complete')?.elapsed ?? currentEvent?.elapsed;
 
-  const realCarbonG = carbonG ?? events.find((e) => e.event === 'complete')?.carbonG;
-  const co2g = realCarbonG ?? (tokenCount ? tokenCount * 0.0003 : 0.3);
+  const hasStreamData = events.length > 0;
+  const realCarbonG   = carbonG ?? events.find((e) => e.event === 'complete')?.carbonG;
+  const co2g = realCarbonG
+    ?? (hasStreamData ? (tokenCount ? tokenCount * 0.0003 : 0.3) : (lastMetrics?.carbonG ?? 0));
   const co2Display = co2g < 0.001
     ? `${(co2g * 1_000_000).toFixed(2)} μg`
     : co2g < 1
@@ -902,7 +820,7 @@ const ReasoningPanel: React.FC<{
   return (
     <div className="reasoning-panel">
 
-      {/* ── Header ─────────────────────────────────────────────────────── */}
+      {/* ── Header ── */}
       <div className="rpanel-header">
         <span className="rpanel-title">AI Reasoning Path</span>
         {routedTo && (
@@ -912,55 +830,97 @@ const ReasoningPanel: React.FC<{
         )}
       </div>
 
-      {/* ── Step list ──────────────────────────────────────────────────── */}
+      {/* ── Steps ── */}
       <div className="rpanel-steps">
-        {steps.map((step, i) => {
-          return (
-            <div key={i} className={`rpanel-step status-${step.status}`}>
-              <div className="rpanel-step-dot">
-                <div className={`rpanel-step-num rpanel-step-num--${step.status}`}>
-                  {step.status === 'done'
-                    ? <CheckCircle2 size={10} strokeWidth={2.5} />
-                    : step.status === 'active'
-                      ? <span className="rpanel-step-spinner" />
-                      : <span>{i + 1}</span>}
-                </div>
-                {i < steps.length - 1 && (
-                  <div className={`rpanel-line${step.status === 'done' ? ' done' : ''}`} />
-                )}
+        {steps.map((step, i) => (
+          <div key={i} className={`rpanel-step status-${step.status}`}>
+            <div className="rpanel-step-dot">
+              <div className={`rpanel-step-num rpanel-step-num--${step.status}`}>
+                {step.status === 'done'
+                  ? <CheckCircle2 size={10} strokeWidth={2.5} />
+                  : step.status === 'active'
+                    ? <span className="rpanel-step-spinner" />
+                    : <span>{i + 1}</span>}
               </div>
-
-              <div className="rpanel-step-body">
-                <div className="rpanel-step-header">
-                  <span className="rpanel-step-label">{step.label}</span>
-                  {step.status === 'active' && (
-                    <span className="rpanel-step-live">{liveElapsed.toFixed(1)}s</span>
-                  )}
-                  {step.elapsed !== undefined && step.status !== 'active' && (
-                    <span className="rpanel-step-time">{step.elapsed.toFixed(1)}s</span>
-                  )}
-                </div>
-                <p className="rpanel-step-desc">{step.description}</p>
-                {step.tags && step.status !== 'pending' && (
-                  <div className="rpanel-tags">
-                    {step.tags.map((t) => <span key={t} className="rpanel-tag">{t}</span>)}
-                  </div>
-                )}
-                {step.progress !== undefined && step.status === 'active' && (
-                  <div className="rpanel-progress-wrap">
-                    <div className="rpanel-progress-bar">
-                      <div className="rpanel-progress-fill" style={{ width: `${step.progress}%` }} />
-                    </div>
-                    <span className="rpanel-progress-pct">{step.progress}%</span>
-                  </div>
-                )}
-              </div>
+              {i < steps.length - 1 && (
+                <div className={`rpanel-line${step.status === 'done' ? ' done' : ''}`} />
+              )}
             </div>
-          );
-        })}
+            <div className="rpanel-step-body">
+              <div className="rpanel-step-header">
+                <span className="rpanel-step-label">{step.label}</span>
+                {step.status === 'active' && (
+                  <span className="rpanel-step-live">{liveElapsed.toFixed(1)}s</span>
+                )}
+                {step.elapsed !== undefined && step.status !== 'active' && (
+                  <span className="rpanel-step-time">{step.elapsed.toFixed(1)}s</span>
+                )}
+              </div>
+              <p className="rpanel-step-desc">{step.description}</p>
+              {step.tags && step.status !== 'pending' && (
+                <div className="rpanel-tags">
+                  {step.tags.map((t) => <span key={t} className="rpanel-tag">{t}</span>)}
+                </div>
+              )}
+              {step.progress !== undefined && step.status === 'active' && (
+                <div className="rpanel-progress-wrap">
+                  <div className="rpanel-progress-bar">
+                    <div className="rpanel-progress-fill" style={{ width: `${step.progress}%` }} />
+                  </div>
+                  <span className="rpanel-progress-pct">{step.progress}%</span>
+                </div>
+              )}
+            </div>
+          </div>
+        ))}
       </div>
 
-      {/* ── Impact Report ──────────────────────────────────────────────── */}
+      {/* ── Green Metrics — last query (polling fallback) ── */}
+      {!hasStreamData && lastMetrics && (lastMetrics.carbonG > 0 || lastMetrics.tokensUsed > 0) && (
+        <div className="rpanel-stats">
+          <div className="rpanel-stats-section-label">LAST QUERY</div>
+          <div className="rpanel-stat-row">
+            <span>CO₂ Footprint</span>
+            <strong className="rpanel-green-value">{lastMetrics.carbonG.toFixed(4)}g</strong>
+          </div>
+          <div className="rpanel-stat-row">
+            <span>Tokens Used</span>
+            <strong>{lastMetrics.tokensUsed.toLocaleString()}</strong>
+          </div>
+          <div className="rpanel-stat-row">
+            <span>Latency</span>
+            <strong>{(lastMetrics.latencyMs / 1000).toFixed(1)}s</strong>
+          </div>
+          {sessionMetrics && sessionMetrics.queryCount > 0 && (
+            <>
+              <div className="rpanel-stats-divider" />
+              <div className="rpanel-stats-section-label">THIS SESSION</div>
+              <div className="rpanel-stat-row">
+                <span>Total CO₂</span>
+                <strong className="rpanel-green-value">{sessionMetrics.totalCarbonG.toFixed(4)}g</strong>
+              </div>
+              <div className="rpanel-stat-row">
+                <span>Total Tokens</span>
+                <strong>{sessionMetrics.totalTokens.toLocaleString()}</strong>
+              </div>
+              <div className="rpanel-stat-row">
+                <span>Queries Run</span>
+                <strong>{sessionMetrics.queryCount}</strong>
+              </div>
+              <div className="rpanel-carbon-context">
+                <span className="rpanel-carbon-leaf">🌿</span>
+                <span>
+                  {sessionMetrics.totalCarbonG < 1
+                    ? `${sessionMetrics.totalCarbonG.toFixed(4)}g CO₂ — less than driving 1 metre`
+                    : `${sessionMetrics.totalCarbonG.toFixed(2)}g CO₂ this session`}
+                </span>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* ── Impact Report (SSE path) ── */}
       <div className="impact-report">
         <div className="ir-header">
           <div className="ir-header-left">
@@ -1000,6 +960,7 @@ const ReasoningPanel: React.FC<{
           </div>
         </div>
       </div>
+
     </div>
   );
 };
@@ -1020,11 +981,24 @@ const AIagentPage: React.FC<{ darkMode?: boolean; toggleDarkMode?: () => void }>
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
 
+  // SSE streaming state
   const { currentEvent, events, isStreaming, startStream, reset: resetStream } = useAgentStream();
 
+  // Right panel collapse
   const [rightPanelOpen, setRightPanelOpen] = useState(true);
 
-  // Preserve last run's metrics after stream is reset so the panel stays populated
+  // Document preview state
+  const [previewCitation, setPreviewCitation] = useState<Citation | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+
+  // Session-level green metrics (polling fallback only)
+  const [sessionMetrics, setSessionMetrics] = useState({
+    totalCarbonG: 0,
+    totalTokens: 0,
+    queryCount: 0,
+  });
+
+  // Persist last SSE complete event so panel stays populated after stream resets
   const [lastCompleteEvent, setLastCompleteEvent] = useState<AgentEvent | null>(null);
   useEffect(() => {
     const ce = events.find((e) => e.event === 'complete');
@@ -1039,6 +1013,17 @@ const AIagentPage: React.FC<{ darkMode?: boolean; toggleDarkMode?: () => void }>
   }, [messages, isTyping, isStreaming, events]);
 
   useEffect(() => { inputRef.current?.focus(); }, []);
+
+  // Citation click → fetch full text, open doc preview panel
+  const handleCitationClick = useCallback(async (c: Citation) => {
+    setPreviewCitation(c);
+    setPreviewLoading(true);
+    const detail = await fetchSourceDetail(c.id);
+    if (detail?.fullText) {
+      setPreviewCitation({ ...c, excerpt: cleanText(detail.fullText).slice(0, 6000) });
+    }
+    setPreviewLoading(false);
+  }, []);
 
   const handleSend = useCallback(async (text?: string): Promise<void> => {
     const messageText = (text ?? input).trim();
@@ -1057,11 +1042,9 @@ const AIagentPage: React.FC<{ darkMode?: boolean; toggleDarkMode?: () => void }>
       let capturedStreamEvents: AgentEvent[] = [];
 
       try {
-        // Primary path: streaming for real-time thought visualisation
+        // Primary path: SSE streaming for real-time thought visualisation
         const result = await startStream(messageText);
         runId = result.runId;
-        // Keep 'complete' as a timing sentinel so stage durations can be calculated.
-        // 'init' and 'error' are dropped.
         capturedStreamEvents = result.capturedEvents.filter(
           (e) => !['init', 'error'].includes(e.event)
         );
@@ -1075,6 +1058,22 @@ const AIagentPage: React.FC<{ darkMode?: boolean; toggleDarkMode?: () => void }>
       const parsed = await parseResponse(run);
       const routedTo = guessRoute(messageText, run);
 
+      // Extract green metrics from backend reasoningPath (polling fallback)
+      const metrics: GreenMetrics = {
+        carbonG: run.reasoningPath?.carbonTotalG ?? 0,
+        tokensUsed: run.reasoningPath?.tokensUsed ?? 0,
+        latencyMs: run.reasoningPath?.latencyMs ?? 0,
+      };
+
+      // Only accumulate session totals when SSE wasn't available
+      if (capturedStreamEvents.length === 0) {
+        setSessionMetrics((prev) => ({
+          totalCarbonG: prev.totalCarbonG + metrics.carbonG,
+          totalTokens: prev.totalTokens + metrics.tokensUsed,
+          queryCount: prev.queryCount + 1,
+        }));
+      }
+
       setMessages((prev) => [
         ...prev,
         {
@@ -1085,6 +1084,7 @@ const AIagentPage: React.FC<{ darkMode?: boolean; toggleDarkMode?: () => void }>
           time: nowStr(),
           runId,
           routedTo,
+          metrics,
           streamEvents: capturedStreamEvents.length > 0 ? capturedStreamEvents : undefined,
         },
       ]);
@@ -1249,6 +1249,16 @@ const AIagentPage: React.FC<{ darkMode?: boolean; toggleDarkMode?: () => void }>
                 </svg>
                 <span>RAG Pipeline Active</span>
               </div>
+              {/* Session CO₂ badge — only shown when polling fallback was used */}
+              {sessionMetrics.queryCount > 0 && (
+                <div className="header-badge header-badge-green">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="2.5">
+                    <path d="M12 2C6 2 2 8 2 12c0 5.5 4.5 10 10 10s10-4.5 10-10c0-1-.2-2-.5-3" />
+                    <path d="M12 6v6l4 2" stroke="#10b981" strokeWidth="2" strokeLinecap="round" />
+                  </svg>
+                  <span>🌿 {sessionMetrics.totalCarbonG.toFixed(4)}g CO₂ session</span>
+                </div>
+              )}
               <div className="header-badge">
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="2.5">
                   <circle cx="12" cy="12" r="10" /><path d="M9 12l2 2 4-4" />
@@ -1287,8 +1297,8 @@ const AIagentPage: React.FC<{ darkMode?: boolean; toggleDarkMode?: () => void }>
                       )}
 
                       <div className="message-content">
+                        {/* Replay completed thought cards above the message bubble */}
                         {msg.type === 'assistant' && msg.streamEvents && msg.streamEvents.length > 0 && (() => {
-                          // Separate the 'complete' sentinel from the renderable stage events
                           const stageEvents = msg.streamEvents.filter(e => e.event !== 'complete');
                           const completeEvt = msg.streamEvents.find(e => e.event === 'complete');
                           return (
@@ -1307,11 +1317,13 @@ const AIagentPage: React.FC<{ darkMode?: boolean; toggleDarkMode?: () => void }>
                             </div>
                           );
                         })()}
+
                         <div className={`message-bubble ${msg.type}`}>
                           {msg.type === 'assistant' && msg.parsed
-                            ? <FormattedResponse parsed={msg.parsed} />
+                            ? <FormattedResponse parsed={msg.parsed} onCitationClick={handleCitationClick} />
                             : msg.text}
                         </div>
+
                         <div className="message-meta">
                           <span className="message-time">
                             {msg.type === 'assistant' ? 'AI Assistant' : 'Legal Counsel'} · {msg.time}
@@ -1326,6 +1338,17 @@ const AIagentPage: React.FC<{ darkMode?: boolean; toggleDarkMode?: () => void }>
                               {msg.runId.slice(0, 18)}…
                             </span>
                           )}
+                          {/* Per-query carbon badge — only when polling fallback was used */}
+                          {!msg.streamEvents && msg.metrics && (msg.metrics.carbonG > 0 || msg.metrics.tokensUsed > 0) && (
+                            <span className="green-metrics-badge" title="Green computing metrics for this query">
+                              🌿 {msg.metrics.carbonG.toFixed(4)}g CO₂
+                              &nbsp;·&nbsp;
+                              🔢 {msg.metrics.tokensUsed.toLocaleString()} tok
+                              {msg.metrics.latencyMs > 0 && (
+                                <>&nbsp;·&nbsp;⏱ {(msg.metrics.latencyMs / 1000).toFixed(1)}s</>
+                              )}
+                            </span>
+                          )}
                         </div>
                       </div>
 
@@ -1335,19 +1358,19 @@ const AIagentPage: React.FC<{ darkMode?: boolean; toggleDarkMode?: () => void }>
                     </div>
                   ))}
 
+                  {/* Live thought stream during active query */}
                   {isTyping && (
                     <div className="thought-stream">
                       <div className="thought-stream-header">
-                        <span className={`ts-status-pill ts-status-pill--done`}>● Processed</span>
-                        <span className={`ts-status-pill ts-status-pill--active`}>● Validating</span>
-                        <span className={`ts-status-pill ts-status-pill--pending`}>● Pending</span>
+                        <span className="ts-status-pill ts-status-pill--done">● Processed</span>
+                        <span className="ts-status-pill ts-status-pill--active">● Validating</span>
+                        <span className="ts-status-pill ts-status-pill--pending">● Pending</span>
                       </div>
                       {(() => {
                         const visibleEvents = events.filter(
                           e => !['init', 'complete', 'error'].includes(e.event) && e.event !== currentEvent?.event
                         );
                         return visibleEvents.map((evt, i) => {
-                          // Next event provides the elapsed boundary for calculating this stage's true duration
                           const nextEvt = visibleEvents[i + 1] ?? currentEvent ?? events.find(e => e.event === 'complete');
                           return (
                             <CompletedThoughtCard
@@ -1536,7 +1559,7 @@ const AIagentPage: React.FC<{ darkMode?: boolean; toggleDarkMode?: () => void }>
             )}
           </div>
 
-          {/* ── Right Panel — Reasoning ────────────────────────────────── */}
+          {/* ── Right Panel ────────────────────────────────────────────── */}
           {hasStartedChat && (
             <aside className={`right-panel${!rightPanelOpen ? ' right-panel--collapsed' : ''}`}>
               <button
@@ -1550,13 +1573,64 @@ const AIagentPage: React.FC<{ darkMode?: boolean; toggleDarkMode?: () => void }>
               </button>
               {rightPanelOpen && (
                 <div className="right-panel-content" style={{ paddingTop: '12px' }}>
-                  <ReasoningPanel
-                    routedTo={activeRoutedTo}
-                    isTyping={isTyping}
-                    currentEvent={currentEvent}
-                    events={events}
-                    carbonG={lastCompleteEvent?.carbonG}
-                  />
+                  {/* Doc preview replaces reasoning panel when a citation is clicked */}
+                  {previewCitation ? (
+                    <div className="doc-preview-panel">
+                      <div className="doc-preview-header">
+                        <span className="doc-preview-title">{previewCitation.title}</span>
+                        <button
+                          className="doc-preview-close"
+                          onClick={() => setPreviewCitation(null)}
+                          aria-label="Close preview"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                      <div className="doc-preview-body">
+                        {previewLoading ? (
+                          <p className="doc-preview-no-content">Loading document…</p>
+                        ) : previewCitation.excerpt ? (
+                          <>
+                            <div className="doc-preview-highlight">
+                              <span className="doc-preview-highlight-label">Cited section</span>
+                              <p className="doc-preview-excerpt">"{previewCitation.excerpt}…"</p>
+                            </div>
+                            {previewCitation.url && (
+                              <a
+                                href={previewCitation.url}
+                                target="_blank"
+                                rel="noreferrer noopener"
+                                className="doc-preview-open-btn"
+                              >
+                                Open full document ↗
+                              </a>
+                            )}
+                          </>
+                        ) : previewCitation.url ? (
+                          <a
+                            href={previewCitation.url}
+                            target="_blank"
+                            rel="noreferrer noopener"
+                            className="doc-preview-open-btn"
+                          >
+                            Open full document ↗
+                          </a>
+                        ) : (
+                          <p className="doc-preview-no-content">No preview available for this source.</p>
+                        )}
+                      </div>
+                    </div>
+                  ) : (
+                    <ReasoningPanel
+                      routedTo={activeRoutedTo}
+                      isTyping={isTyping}
+                      currentEvent={currentEvent}
+                      events={events}
+                      carbonG={lastCompleteEvent?.carbonG}
+                      sessionMetrics={sessionMetrics}
+                      lastMetrics={lastAssistant?.metrics}
+                    />
+                  )}
                 </div>
               )}
             </aside>
