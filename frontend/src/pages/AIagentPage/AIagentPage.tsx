@@ -553,7 +553,7 @@ const AgentThinkingBlock: React.FC<{
           </span>
           {!isComplete && !isError && (
             <div className="tc-neural-bars" aria-hidden="true">
-              {[0,1,2,3,4].map((i) => (
+              {[0, 1, 2, 3, 4].map((i) => (
                 <span key={i} className="tc-neural-bar" style={{ animationDelay: `${i * 0.13}s`, background: color }} />
               ))}
             </div>
@@ -630,7 +630,6 @@ const FormattedResponse: React.FC<{
                     </button>
                   )}
                   <span className="citation-id">[{c.id}]</span>
-                  {/* Clickable title opens doc preview panel */}
                   <button className="citation-title-btn" onClick={() => onCitationClick(c)}>
                     {c.title}
                   </button>
@@ -656,12 +655,11 @@ const FormattedResponse: React.FC<{
           </div>
         </div>
       )}
-
     </div>
   );
 };
 
-// ─── Research Tasks (Empty State) ────────────────────────────────────────────
+// ─── Research Tasks (Empty State) ─────────────────────────────────────────────
 
 interface ResearchTask {
   icon: 'regulatory' | 'compliance' | 'research' | 'contract';
@@ -869,32 +867,60 @@ const ReasoningPanel: React.FC<{
                   <div className="rpanel-progress-bar">
                     <div className="rpanel-progress-fill" style={{ width: `${step.progress}%` }} />
                   </div>
-                )}
-                {step.progress !== undefined && step.status === 'active' && (
-                  <div className="rpanel-progress-wrap">
-                    <div className="rpanel-progress-bar">
-                      <div className="rpanel-progress-fill" style={{ width: `${step.progress}%` }} />
-                    </div>
-                    <span className="rpanel-progress-pct">{step.progress}%</span>
-                  </div>
-                )}
-              </div>
+                  <span className="rpanel-progress-pct">{step.progress}%</span>
+                </div>
+              )}
             </div>
-          );
-        })}
-      </div>
-
-      {/* ── Impact Report ──────────────────────────────────────────────── */}
-      <div className="impact-report">
-        <div className="ir-header">
-          <div className="ir-header-left">
-            <Leaf size={13} strokeWidth={2} />
-            <span className="ir-title">Impact Report</span>
           </div>
         ))}
       </div>
 
-      {/* ── Impact Report ── */}
+      {/* ── Green Metrics — last query (polling fallback) ── */}
+      {!hasStreamData && lastMetrics && (lastMetrics.carbonG > 0 || lastMetrics.tokensUsed > 0) && (
+        <div className="rpanel-stats">
+          <div className="rpanel-stats-section-label">LAST QUERY</div>
+          <div className="rpanel-stat-row">
+            <span>CO₂ Footprint</span>
+            <strong className="rpanel-green-value">{lastMetrics.carbonG.toFixed(4)}g</strong>
+          </div>
+          <div className="rpanel-stat-row">
+            <span>Tokens Used</span>
+            <strong>{lastMetrics.tokensUsed.toLocaleString()}</strong>
+          </div>
+          <div className="rpanel-stat-row">
+            <span>Latency</span>
+            <strong>{(lastMetrics.latencyMs / 1000).toFixed(1)}s</strong>
+          </div>
+          {sessionMetrics && sessionMetrics.queryCount > 0 && (
+            <>
+              <div className="rpanel-stats-divider" />
+              <div className="rpanel-stats-section-label">THIS SESSION</div>
+              <div className="rpanel-stat-row">
+                <span>Total CO₂</span>
+                <strong className="rpanel-green-value">{sessionMetrics.totalCarbonG.toFixed(4)}g</strong>
+              </div>
+              <div className="rpanel-stat-row">
+                <span>Total Tokens</span>
+                <strong>{sessionMetrics.totalTokens.toLocaleString()}</strong>
+              </div>
+              <div className="rpanel-stat-row">
+                <span>Queries Run</span>
+                <strong>{sessionMetrics.queryCount}</strong>
+              </div>
+              <div className="rpanel-carbon-context">
+                <span className="rpanel-carbon-leaf">🌿</span>
+                <span>
+                  {sessionMetrics.totalCarbonG < 1
+                    ? `${sessionMetrics.totalCarbonG.toFixed(4)}g CO₂ — less than driving 1 metre`
+                    : `${sessionMetrics.totalCarbonG.toFixed(2)}g CO₂ this session`}
+                </span>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* ── Impact Report (SSE path) ── */}
       <div className="impact-report">
         <div className="ir-header">
           <div className="ir-header-left">
@@ -933,26 +959,8 @@ const ReasoningPanel: React.FC<{
             <span className="ir-stat-val">{totalElapsed != null ? `${totalElapsed.toFixed(1)}s` : '—'}</span>
           </div>
         </div>
-
-        {/* Session totals — only shown when polling fallback was used (no stream data) */}
-        {!hasStreamData && sessionMetrics && sessionMetrics.queryCount > 0 && (
-          <div style={{ paddingTop: '8px', borderTop: '1px solid var(--border-light)', marginTop: '4px' }}>
-            <div className="rpanel-stats-section-label" style={{ padding: '4px 0 6px' }}>THIS SESSION</div>
-            <div className="rpanel-stat-row">
-              <span>Total CO₂</span>
-              <strong className="rpanel-green-value">{sessionMetrics.totalCarbonG.toFixed(4)}g</strong>
-            </div>
-            <div className="rpanel-stat-row">
-              <span>Total Tokens</span>
-              <strong>{sessionMetrics.totalTokens.toLocaleString()}</strong>
-            </div>
-            <div className="rpanel-stat-row">
-              <span>Queries Run</span>
-              <strong>{sessionMetrics.queryCount}</strong>
-            </div>
-          </div>
-        )}
       </div>
+
     </div>
   );
 };
