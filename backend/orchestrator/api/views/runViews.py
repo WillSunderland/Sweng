@@ -9,18 +9,32 @@ from rest_framework import status
 
 from orchestrator.audit_logger import log_audit
 
-from orchestrator.api.schemas.runSchemas import CreateRunRequestSerializer
-from orchestrator.api.errors.errorMapping import (
-    invalidRequestError,
-    runNotFoundError,
-    sourceNotFoundError,
-)
-from orchestrator.api.constants.runConstants import (
-    RUN_STATUS_RUNNING,
-    RUN_STATUS_COMPLETED,
-    DEFAULT_TRUST_SCORE,
-    DEFAULT_CARBON_G,
-)
+try:
+    from orchestrator.api.schemas.runSchemas import CreateRunRequestSerializer
+    from orchestrator.api.errors.errorMapping import (
+        invalidRequestError,
+        runNotFoundError,
+        sourceNotFoundError,
+    )
+    from orchestrator.api.constants.runConstants import (
+        RUN_STATUS_RUNNING,
+        RUN_STATUS_COMPLETED,
+        DEFAULT_TRUST_SCORE,
+        DEFAULT_CARBON_G,
+    )
+except ModuleNotFoundError:
+    from orchestrator.api.schemas.runSchemas import CreateRunRequestSerializer
+    from orchestrator.api.errors.errorMapping import (
+        invalidRequestError,
+        runNotFoundError,
+        sourceNotFoundError,
+    )
+    from orchestrator.api.constants.runConstants import (
+        RUN_STATUS_RUNNING,
+        RUN_STATUS_COMPLETED,
+        DEFAULT_TRUST_SCORE,
+        DEFAULT_CARBON_G,
+    )
 
 RUN_STORE = {}
 SOURCE_STORE = {}
