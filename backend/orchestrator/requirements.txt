@@ -11,3 +11,4 @@ pydantic-settings
 langsmith>=0.1.0
 numpy
 sse-starlette
+PyJWT>=2.8.0
