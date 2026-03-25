@@ -50,16 +50,16 @@ If the user isn't logged in you'll get a **401**. Redirect them to login.
 
 ## Token refresh
 
-The access token lasts **30 minutes**. Refresh it before it expires:
+The access token lasts **90 minutes**. Refresh it before it expires:
 
 ```javascript
-// Refresh every 25 minutes
+// Refresh every 85 minutes
 setInterval(async () => {
   await fetch('http://localhost:8080/api/auth/token/refresh/', {
     method: 'POST',
     credentials: 'include'
   });
-}, 25 * 60 * 1000);
+}, 85 * 60 * 1000);
 ```
 
 Or handle 401s reactively:
