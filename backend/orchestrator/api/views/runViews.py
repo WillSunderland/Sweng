@@ -7,6 +7,8 @@ from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from rest_framework import status
 
+from orchestrator.audit_logger import log_audit
+
 try:
     from orchestrator.api.schemas.runSchemas import CreateRunRequestSerializer
     from orchestrator.api.errors.errorMapping import (
@@ -34,8 +36,6 @@ except ModuleNotFoundError:
         DEFAULT_CARBON_G,
     )
 
-# in-memory stores for stubbed API responses
-# to be replaced with LangGraph output
 RUN_STORE = {}
 SOURCE_STORE = {}
 
@@ -54,15 +54,18 @@ def createRun(request):
             invalidRequestError(serializer.errors),
             status=status.HTTP_400_BAD_REQUEST,
         )
+
+    request_id = str(uuid.uuid4())
+
     runId = f"run_{uuid.uuid4().hex[:12]}"
     createdAt = getIsoTimestamp()
 
     RUN_STORE[runId] = {
         "query": serializer.validated_data["query"],
         "createdAt": createdAt,
+        "request_id": request_id,
     }
 
-    # stub to prevent broken citation links in FE
     SOURCE_STORE["src_001"] = {
         "sourceId": "src_001",
         "title": "Placeholder Source",
@@ -74,6 +77,7 @@ def createRun(request):
             "runId": runId,
             "status": RUN_STATUS_RUNNING,
             "createdAt": createdAt,
+            "request_id": request_id,
         },
         status=status.HTTP_201_CREATED,
     )
@@ -101,6 +105,8 @@ def getRun(request, runId):
     run = RUN_STORE.get(runId)
     if not run:
         return Response(runNotFoundError(runId), status=status.HTTP_404_NOT_FOUND)
+
+    start_time = datetime.now(timezone.utc)
 
     responseBody = {
         "runId": runId,
@@ -158,6 +164,22 @@ def getRun(request, runId):
             "sourceIds": ["src_001"],
         },
     }
+
+    end_time = datetime.now(timezone.utc)
+    latency_ms = (end_time - start_time).total_seconds() * 1000
+
+    audit_log = {
+        "request_id": run.get("request_id"),
+        "run_id": runId,
+        "timestamp": getIsoTimestamp(),
+        "query": run.get("query"),
+        "sources": responseBody["references"]["sourceIds"],
+        "response": responseBody["agentCommentary"]["content"],
+        "model_used": "stub-model",
+        "latency_ms": latency_ms,
+    }
+
+    log_audit(audit_log)
 
     return Response(responseBody, status=status.HTTP_200_OK)
 
