@@ -81,12 +81,25 @@ async def create_run(request: CreateRunRequest):
     if cached:
 
         class _CachedResult:
-            answer = cached.get("answer", "")
-            sources = [SourceInfo(**s) for s in cached.get("sources", [])]
-            citation_validation = cached.get("citation_validation")
-            error = None
+            def __init__(self, payload: dict):
+                self.answer = payload.get("answer", "")
+                self.structured_answer = payload.get("structured_answer")
+                self.sources = [SourceInfo(**s) for s in payload.get("sources", [])]
+                self.model_used = payload.get("model_used")
+                self.provider = payload.get("provider")
+                self.carbonCountInTons = payload.get("carbonCountInTons", 0.0)
+                self.token_count = payload.get("token_count", 0)
+                self.error = payload.get("error")
+                self.rewritten_query = payload.get("rewritten_query")
+                self.plan = payload.get("plan", [])
+                self.reasoning_steps = payload.get("reasoning_steps", [])
+                self.retrieval_skipped = payload.get("retrieval_skipped", False)
+                self.citation_validation = payload.get("citation_validation")
 
-        result = _CachedResult()
+            def model_dump(self):
+                return dict(cached)
+
+        result = _CachedResult(cached)
     else:
         with trace_node(
             "orchestrator_query",
@@ -125,6 +138,7 @@ async def create_run(request: CreateRunRequest):
         if hasattr(result, "model_dump")
         else {
             "answer": result.answer,
+            "structured_answer": getattr(result, "structured_answer", None),
             "sources": [s.model_dump() for s in result.sources],
             "citation_validation": result.citation_validation,
         }
@@ -149,13 +163,19 @@ async def create_run(request: CreateRunRequest):
             if hasattr(source, "model_dump")
             else (source if isinstance(source, dict) else {})
         )
+        bill_id = source_data.get("bill_id", "")
         SOURCE_STORE[source_id] = {
             "sourceId": source_id,
+            "documentId": source_data.get("source_id", "") or bill_id or source_id,
             "title": source_data.get("title", "Untitled"),
-            "fullText": source_data.get("title", ""),
-            "billId": source_data.get("bill_id", ""),
+            "fullText": source_data.get("source_file", source_data.get("title", "")),
+            "billId": bill_id,
+            "chunkId": source_data.get("chunk_id", ""),
+            "state": source_data.get("state", ""),
             "billType": source_data.get("bill_type", ""),
             "billNumber": source_data.get("bill_number", ""),
+            "session": source_data.get("session", ""),
+            "policyArea": source_data.get("policy_area", ""),
         }
 
     return {"runId": run_id, "status": RUN_STATUS_RUNNING, "createdAt": created_at}
@@ -233,16 +253,20 @@ async def get_run(run_id: str):
         if source_id.startswith(f"{run_id}_src_")
     ]
     answer = result.get("answer", "No answer generated.")
+    structured_answer = result.get("structured_answer")
     reasoning_steps = result.get("reasoning_steps", [])
     carbon_tons = float(result.get("carbonCountInTons", 0.0))
     carbon_grams = tons_to_grams(carbon_tons) if carbon_tons else DEFAULT_CARBON_G
     citation_validation = result.get("citation_validation")
+    token_count = result.get("token_count", 0)
 
     return {
         "runId": run_id,
         "status": run.get("status", RUN_STATUS_COMPLETED),
         "title": f"Legal Analysis: {run.get('query')}",
         "lastUpdatedAt": run["createdAt"],
+        "answer": answer,
+        "structured_answer": structured_answer,
         "keyFinding": {
             "summary": answer,
             "impactLevel": "medium",
@@ -262,11 +286,33 @@ async def get_run(run_id: str):
             "content": answer,
             "suggestedActions": [],
         },
+        "documents": [
+            {
+                "id": sid,
+                "_id": SOURCE_STORE[sid].get("billId", sid),
+                "doc_id": SOURCE_STORE[sid].get("billId", sid),
+                "title": SOURCE_STORE[sid].get("title", ""),
+                "bill_id": SOURCE_STORE[sid].get("billId", ""),
+                "bill_type": SOURCE_STORE[sid].get("billType", ""),
+                "bill_number": SOURCE_STORE[sid].get("billNumber", ""),
+                "state": SOURCE_STORE[sid].get("state", ""),
+                "session": SOURCE_STORE[sid].get("session", ""),
+                "policy_area": SOURCE_STORE[sid].get("policyArea", ""),
+                "chunk_id": SOURCE_STORE[sid].get("chunkId", ""),
+                "chunk_text": SOURCE_STORE[sid].get("fullText", ""),
+            }
+            for sid in source_ids
+            if sid in SOURCE_STORE
+        ],
+        "model_used": result.get("model_used"),
+        "provider_used": result.get("provider"),
         "reasoningPath": {
             "engine": "langgraph",
             "steps": reasoning_steps,
             "trustScore": DEFAULT_TRUST_SCORE,
             "carbonTotalG": carbon_grams,
+            "latencyMs": result.get("latency_ms", 0),
+            "tokensUsed": token_count,
         },
         "references": {
             "sourceIds": source_ids,

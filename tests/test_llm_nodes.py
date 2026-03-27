@@ -77,6 +77,39 @@ def test_output_formatter_success(sample_state):
     assert response["carbonCountInTons"] > 0
 
 
+def test_output_formatter_structures_verbatim_segments_with_document_and_chunk_ids(
+    sample_state,
+):
+    state = sample_state.copy()
+    state["llm_response"] = (
+        "Nevada requires a new threshold. [Source: Nevada Tax Reform Act] "
+        "\u00abVERBATIM\u00bbSection 5: All individuals earning above $80,000 "
+        "shall be subject to...\u00ab/VERBATIM\u00bb [Source: Nevada Tax Reform Act] "
+        "This is the controlling text."
+    )
+    state["model_used"] = "gpt-4"
+    state["provider_used"] = "test"
+
+    result = llmOutputNode(state)
+    response = result["response"]
+    structured = response["structured_answer"]
+
+    assert structured is not None
+    assert [segment["type"] for segment in structured["segments"]] == [
+        "generated",
+        "verbatim",
+        "generated",
+    ]
+    assert structured["segments"][0]["citations"][0]["source_id"] == "NV-HB-123"
+    assert structured["segments"][0]["citations"][0]["chunk_id"] == "chunk_001"
+    assert structured["segments"][1]["citations"][0]["source_id"] == "NV-HB-123"
+    assert structured["segments"][1]["citations"][0]["chunk_id"] == "chunk_001"
+    assert response["sources"][0]["source_id"] == "NV-HB-123"
+    assert response["sources"][0]["chunk_id"] == "chunk_001"
+    assert response["sources"][0]["source_file"].startswith("Section 5:")
+    assert "\u00abVERBATIM\u00bb" not in response["answer"]
+
+
 def test_output_formatter_error(sample_state):
     state = sample_state.copy()
     state["error"] = "Major Error"
