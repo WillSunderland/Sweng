@@ -23,6 +23,5 @@ db.sqlite3
 
 # Terminal Paste Image folder
 .cp-images/
-
-
 frontend/coverage/
+frontend/bun.lockb

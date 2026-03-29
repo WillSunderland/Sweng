@@ -25,6 +25,12 @@ class Settings(BaseSettings):
     simple_query_threshold: int = 2
     force_hf_only: bool = False
 
+    # LangSmith Tracing
+    langchain_tracing_v2: bool = False
+    langchain_endpoint: str = "https://api.smith.langchain.com"
+    langchain_api_key: str = ""
+    langchain_project: str = "propylon-sweng-group16"
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

@@ -28,7 +28,7 @@ def get_settings():
       - BILL_ID      (if set, ingest exactly this bill only)
       - STATE_CODE       (default: "TX")
       - CONGRESS_NUMBER  (default: "118")
-      - SEARCH_LIMIT     (default: 10)     max bills to ingest
+      - SEARCH_LIMIT     (default: 100)    max bills to ingest
     """
     settings = {}
 
@@ -74,7 +74,7 @@ def get_settings():
     settings["CONGRESS_NUMBER"] = os.getenv("CONGRESS_NUMBER", "118").strip()
 
     # Safe parsing for SEARCH_LIMIT
-    limit_raw = os.getenv("SEARCH_LIMIT", "10").strip()
+    limit_raw = os.getenv("SEARCH_LIMIT", "100").strip()
     try:
         settings["SEARCH_LIMIT"] = int(limit_raw)
     except ValueError as e:

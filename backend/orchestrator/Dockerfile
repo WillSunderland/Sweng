@@ -8,11 +8,11 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y gcc
 
 # Install Python dependencies
-COPY requirements.txt .
+COPY backend/orchestrator/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy project
 COPY . .
 
-# Run the application (assuming FastAPI for the orchestrator)
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Run the shared FastAPI application used by the orchestrator.
+CMD ["uvicorn", "backend.orchestrator.main:app", "--host", "0.0.0.0", "--port", "8000"]

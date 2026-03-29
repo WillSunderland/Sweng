@@ -5,6 +5,7 @@ import './AIagentPage.css';
 import sunIcon from '../../assets/lighModeSun.png';
 import moonIcon from '../../assets/darkModeMoon.png';
 import { Brain, Search, BookOpen, CheckCircle2, Leaf, Paperclip, Cpu, Sparkles, AlertCircle } from 'lucide-react';
+import { API_BASE_URL, POLL_INTERVAL_MS, POLL_TIMEOUT_MS } from '../../constants/apiConfig';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -132,9 +133,7 @@ interface AgentEvent {
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
-const BASE_URL = 'http://localhost:8000';
-const POLL_INTERVAL_MS = 1500;
-const POLL_TIMEOUT_MS = 60_000;
+const BASE_URL = API_BASE_URL;
 const STREAM_TIMEOUT_MS = 90_000;
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -142,9 +141,10 @@ const STREAM_TIMEOUT_MS = 90_000;
 const nowStr = (): string =>
   new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
-function cleanText(raw: string): string {
+function cleanText(raw: unknown): string {
   if (!raw) return '';
-  return raw
+  const str = typeof raw === 'string' ? raw : JSON.stringify(raw);
+  return str
     .replace(/<\/?[a-zA-Z][^>]*>/g, ' ')
     .replace(/\[[^\]]*\]/g, '')
     .replace(/\([*^†‡§¶\d]+\)/g, '')

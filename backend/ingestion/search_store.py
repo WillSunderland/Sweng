@@ -70,6 +70,7 @@ class SearchStore:
                 "settings": {"index": {"knn": True}},
                 "mappings": {
                     "properties": {
+                        "section": {"type": "keyword"},
                         "doc_id": {"type": "keyword"},
                         "bill_id": {"type": "keyword"},
                         "state": {"type": "keyword"},
@@ -90,6 +91,7 @@ class SearchStore:
             body = {
                 "mappings": {
                     "properties": {
+                        "section": {"type": "keyword"},
                         "doc_id": {"type": "keyword"},
                         "bill_id": {"type": "keyword"},
                         "state": {"type": "keyword"},

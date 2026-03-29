@@ -1,8 +1,10 @@
 from __future__ import annotations
+
 from typing import Final
 
 TONS_TO_GRAMS: Final[float] = 1_000_000.0
 
+# Standardized per-response offsets in metric tons.
 MODEL_CARBON_TONS: Final[dict[str, float]] = {
     "openai/gpt-oss-120b": 0.0000006,
     "openai/gpt-oss-20b": 0.0000002,

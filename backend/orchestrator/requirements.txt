@@ -2,9 +2,13 @@ fastapi
 uvicorn
 langgraph
 elasticsearch>=8.0.0,<9.0.0
+opensearch-py
 sentence-transformers
 openai
 httpx
 tenacity
 pydantic-settings
+langsmith>=0.1.0
 numpy
+sse-starlette
+PyJWT>=2.8.0

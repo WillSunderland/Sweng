@@ -5,6 +5,7 @@ from typing import Any, Dict, List, Optional
 from elasticsearch import Elasticsearch
 from sentence_transformers import SentenceTransformer
 from mmr import mmr_rerank
+from cross_encoder import CrossEncoderReranker
 
 
 class SemanticRetriever:
@@ -34,6 +35,7 @@ class SemanticRetriever:
 
         self._es_client: Optional[Elasticsearch] = None
         self._embedder: Optional[SentenceTransformer] = None
+        self._cross_encoder: Optional[CrossEncoderReranker] = None
 
     def get_es_client(self) -> Elasticsearch:
         if self._es_client is None:
@@ -44,6 +46,11 @@ class SemanticRetriever:
         if self._embedder is None:
             self._embedder = SentenceTransformer(self.embed_model)
         return self._embedder
+
+    def get_cross_encoder(self) -> CrossEncoderReranker:
+        if self._cross_encoder is None:
+            self._cross_encoder = CrossEncoderReranker()
+        return self._cross_encoder
 
     def embed_query(self, user_question: str) -> List[float]:
         model = self.get_embedder()
@@ -116,4 +123,10 @@ class SemanticRetriever:
         qvec = self.embed_query(query)
         raw = self.vector_search(qvec, fetch_k=50, state=state)
         chunks = self.format_hits(raw)
-        return mmr_rerank(chunks, query_embedding=qvec, top_k=top_k)
+
+        # MMR: 50 -> top 15 (diverse)
+        mmr_results = mmr_rerank(chunks, query_embedding=qvec, top_k=15)
+
+        # Cross-encoder: 15 -> top 5 (most relevant)
+        cross_encoder = self.get_cross_encoder()
+        return cross_encoder.rerank(query, mmr_results, top_k=top_k)
