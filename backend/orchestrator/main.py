@@ -27,7 +27,11 @@ from app.models import ChatMessage, QueryRequest, SourceInfo
 from app.services.carbon_estimator import tons_to_grams
 from backend.orchestrator.cache import QueryCache
 from backend.orchestrator.config import getSettings as getOrchestratorSettings
-from backend.orchestrator.auth import get_current_user, get_user_id
+from backend.orchestrator.auth import (
+    get_current_user,
+    get_optional_user,
+    get_user_id,
+)
 from backend.orchestrator.langsmith_tracing import (
     configure_langsmith_tracing,
     is_tracing_enabled,
@@ -74,11 +78,32 @@ app = shared_app
 graph_app = None
 
 CurrentUser = Annotated[dict, Depends(get_current_user)]
+OptionalCurrentUser = Annotated[dict | None, Depends(get_optional_user)]
 
 
 @app.get("/health")
 async def health_check():
     return {"status": "ok"}
+
+
+def _ensure_health_override() -> None:
+    """Ensure orchestrator health endpoint wins over shared app health."""
+    routes = list(app.router.routes)
+    health_routes = [r for r in routes if getattr(r, "path", None) == "/health"]
+    if len(health_routes) <= 1:
+        return
+    kept = []
+    for route in routes:
+        if getattr(route, "path", None) != "/health" or route.endpoint is health_check:
+            kept.append(route)
+    for idx, route in enumerate(kept):
+        if getattr(route, "path", None) == "/health" and route.endpoint is health_check:
+            kept.insert(0, kept.pop(idx))
+            break
+    app.router.routes = kept
+
+
+_ensure_health_override()
 
 
 class CreateRunRequest(BaseModel):
@@ -295,7 +320,7 @@ async def _stream_run_events(query: str, priority: str | None, user_id: str):
 
 @app.post("/api/runs", status_code=201)
 async def create_run(
-    request: CreateRunRequest, current_user: CurrentUser | None = None
+    request: CreateRunRequest, current_user: OptionalCurrentUser = None
 ):
     user_id = get_user_id(current_user) if current_user else "anonymous"
     run_id = f"run_{uuid.uuid4().hex[:12]}"
@@ -429,7 +454,7 @@ async def stream_run(
 
 @app.get("/api/runs")
 async def list_runs(
-    current_user: CurrentUser | None = None,
+    current_user: OptionalCurrentUser = None,
     page: int = 1,
     limit: int = 10,
     status: str = None,
@@ -496,7 +521,7 @@ async def list_runs(
 
 
 @app.get("/api/runs/{run_id}")
-async def get_run(run_id: str, current_user: CurrentUser | None = None):
+async def get_run(run_id: str, current_user: OptionalCurrentUser = None):
     user_id = get_user_id(current_user) if current_user else "anonymous"
     run = RUN_STORE.get(run_id)
     if not run:
@@ -575,7 +600,7 @@ async def get_run(run_id: str, current_user: CurrentUser | None = None):
 
 
 @app.get("/api/sources/{source_id}")
-async def get_source(source_id: str, current_user: CurrentUser | None = None):
+async def get_source(source_id: str, current_user: OptionalCurrentUser = None):
     source = SOURCE_STORE.get(source_id)
     if not source:
         raise HTTPException(status_code=404, detail=f"Source {source_id} not found")

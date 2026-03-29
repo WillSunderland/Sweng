@@ -76,6 +76,35 @@ def get_current_user(
     return payload
 
 
+def get_optional_user(
+    credentials: Optional[HTTPAuthorizationCredentials] = Security(security),
+    token_access: Optional[str] = Cookie(default=None),
+    token_query: Optional[str] = Query(default=None, alias="token"),
+) -> Optional[dict]:
+    """Return decoded JWT payload if present; otherwise None."""
+    token = None
+
+    if credentials:
+        token = credentials.credentials
+    elif token_access:
+        token = token_access
+    elif token_query:
+        token = token_query
+
+    if not token:
+        return None
+
+    payload = _decode_token(token)
+
+    if payload.get("token_type") != "access":
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid token type. Use an access token.",
+        )
+
+    return payload
+
+
 def get_user_id(user: dict) -> str:
     """Extract user ID string from JWT payload."""
     user_id = user.get("user_id")
