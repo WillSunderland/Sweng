@@ -52,6 +52,13 @@ class SemanticRetriever:
             self._cross_encoder = CrossEncoderReranker()
         return self._cross_encoder
 
+    def get_index_stats(self) -> Dict[str, Any]:
+        try:
+            client = self.get_es_client()
+            return client.indices.stats(index=self.index_name)
+        except Exception as exc:  # pragma: no cover - depends on ES availability
+            return {"ok": False, "error": str(exc)}
+
     def embed_query(self, user_question: str) -> List[float]:
         model = self.get_embedder()
         vec = model.encode([user_question], normalize_embeddings=True)

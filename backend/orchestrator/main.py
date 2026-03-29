@@ -2,10 +2,16 @@ from __future__ import annotations
 
 import json
 import logging
+import os
+import sys
 import time
 import uuid
 from datetime import datetime, timezone
 from typing import Annotated
+
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
 
 from fastapi import Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
@@ -26,6 +32,18 @@ from backend.orchestrator.langsmith_tracing import (
     trace_node,
     build_trace_metadata,
 )
+try:
+    from backend.orchestrator.semantic_retrieval import SemanticRetriever
+except Exception as exc:  # pragma: no cover - fallback for runtime import issues
+    logging.getLogger(__name__).warning(
+        "Failed to import SemanticRetriever: %s", exc
+    )
+
+    class SemanticRetriever:  # type: ignore[no-redef]
+        def get_index_stats(self):
+            return {"ok": False, "error": "SemanticRetriever unavailable"}
+
+from backend.orchestrator.url_utils import resolve_source_url
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +70,7 @@ configure_langsmith_tracing(
 )
 
 app = shared_app
+graph_app = None
 
 CurrentUser = Annotated[dict, Depends(get_current_user)]
 
@@ -110,6 +129,7 @@ def _store_sources(run_id: str, sources: list[SourceInfo | dict]) -> None:
             "title": source_data.get("title", "Untitled"),
             "fullText": source_data.get("source_file", source_data.get("title", "")),
             "billId": bill_id,
+            "congress": source_data.get("congress", ""),
             "chunkId": source_data.get("chunk_id", ""),
             "state": source_data.get("state", ""),
             "billType": source_data.get("bill_type", ""),
@@ -134,6 +154,30 @@ def _store_run_result(run_id: str, result: dict, latency_ms: int | None = None) 
 
     sources = result.get("sources", []) or []
     _store_sources(run_id, sources)
+
+
+def _normalize_graph_app_result(result: dict) -> dict:
+    documents = result.get("documents", []) or []
+    sources = []
+    for doc in documents:
+        sources.append(
+            {
+                "source_id": doc.get("doc_id", "") or doc.get("bill_id", ""),
+                "title": doc.get("title", ""),
+                "source_file": doc.get("chunk_text", ""),
+                "bill_id": doc.get("bill_id", ""),
+                "bill_type": doc.get("bill_type", ""),
+                "bill_number": doc.get("bill_number", ""),
+                "congress": doc.get("congress", ""),
+            }
+        )
+    return {
+        "answer": result.get("answer", ""),
+        "model_used": result.get("model_used"),
+        "provider": result.get("provider") or result.get("provider_used"),
+        "sources": sources,
+        "token_count": result.get("token_count", 0),
+    }
 
 
 NODE_EVENT_MAP = {
@@ -297,6 +341,11 @@ async def create_run(
                 return dict(cached)
 
         result = _CachedResult(cached)
+    elif graph_app is not None:
+        graph_result = await graph_app.ainvoke({"query": request.query})
+        result_payload = _normalize_graph_app_result(graph_result)
+        _store_run_result(run_id, result_payload)
+        result = result_payload
     else:
         with trace_node(
             "orchestrator_query",
@@ -329,25 +378,33 @@ async def create_run(
         if not history_for_query and not getattr(result, "error", None):
             _query_cache.set(request.query, result.model_dump())
 
-    result_payload = (
-        result.model_dump()
-        if hasattr(result, "model_dump")
-        else {
-            "answer": result.answer,
-            "structured_answer": getattr(result, "structured_answer", None),
-            "sources": [s.model_dump() for s in result.sources],
-            "citation_validation": result.citation_validation,
-        }
-    )
-    _store_run_result(run_id, result_payload)
+    if isinstance(result, dict):
+        result_payload = result
+    else:
+        result_payload = (
+            result.model_dump()
+            if hasattr(result, "model_dump")
+            else {
+                "answer": result.answer,
+                "structured_answer": getattr(result, "structured_answer", None),
+                "sources": [s.model_dump() for s in result.sources],
+                "citation_validation": result.citation_validation,
+            }
+        )
+        _store_run_result(run_id, result_payload)
 
     if request.session_id:
         scoped_key = _scoped_session_key(user_id, request.session_id)
         if scoped_key not in SESSION_STORE:
             SESSION_STORE[scoped_key] = []
         SESSION_STORE[scoped_key].append({"role": "user", "content": request.query})
+        assistant_reply = (
+            result_payload.get("answer", "")
+            if isinstance(result_payload, dict)
+            else result.answer
+        )
         SESSION_STORE[scoped_key].append(
-            {"role": "assistant", "content": result.answer}
+            {"role": "assistant", "content": assistant_reply}
         )
         SESSION_STORE[scoped_key] = SESSION_STORE[scoped_key][-40:]
 
@@ -491,6 +548,7 @@ async def get_run(run_id: str, current_user: CurrentUser | None = None):
                 "bill_id": SOURCE_STORE[sid].get("billId", ""),
                 "bill_type": SOURCE_STORE[sid].get("billType", ""),
                 "bill_number": SOURCE_STORE[sid].get("billNumber", ""),
+                "url": resolve_source_url(SOURCE_STORE[sid]) or "",
                 "state": SOURCE_STORE[sid].get("state", ""),
                 "session": SOURCE_STORE[sid].get("session", ""),
                 "policy_area": SOURCE_STORE[sid].get("policyArea", ""),
@@ -520,7 +578,15 @@ async def get_source(source_id: str, current_user: CurrentUser | None = None):
     source = SOURCE_STORE.get(source_id)
     if not source:
         raise HTTPException(status_code=404, detail=f"Source {source_id} not found")
-    return source
+    return {**source, "url": resolve_source_url(source) or ""}
+
+
+@app.get("/api/stats")
+async def get_stats():
+    retriever = SemanticRetriever()
+    if hasattr(retriever, "get_index_stats"):
+        return retriever.get_index_stats()
+    return {"ok": False}
 
 
 @app.get("/api/sessions/{session_id}")
