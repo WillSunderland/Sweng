@@ -23,11 +23,11 @@ services:
       - STATE_CODE=${STATE_CODE:-TX}
       - SEARCH_K=${SEARCH_K:-5}
       - FORCE_HF_ONLY=${FORCE_HF_ONLY:-false}
-      # LangSmith Tracing
       - LANGCHAIN_TRACING_V2=${LANGCHAIN_TRACING_V2:-false}
       - LANGCHAIN_ENDPOINT=${LANGCHAIN_ENDPOINT:-https://api.smith.langchain.com}
       - LANGCHAIN_API_KEY=${LANGCHAIN_API_KEY:-}
       - LANGCHAIN_PROJECT=${LANGCHAIN_PROJECT:-propylon-sweng-group16}
+      - DJANGO_SECRET_KEY=${DJANGO_SECRET_KEY}
     depends_on:
       - mcp-server
       - hf-server
@@ -44,11 +44,13 @@ services:
   # 3. Django Auth Server
   django:
     build: ./backend/django_server
+    ports:
+      - "8080:8080"
     environment:
-      - SECRET_KEY=${DJANGO_SECRET_KEY:-django-insecure-dev-key-change-in-prod}
+      - SECRET_KEY=${DJANGO_SECRET_KEY}
       - DEBUG=True
     command: >
-      sh -c "python manage.py migrate --run-syncdb && python manage.py runserver 0.0.0.0:8000"
+      sh -c "python manage.py migrate --run-syncdb && python manage.py runserver 0.0.0.0:8080"
 
   # 4. The Frontend (React UI + Nginx reverse proxy)
   frontend:
@@ -59,7 +61,7 @@ services:
       - orchestrator
       - django
 
-  # 4. ElasticSearch (Local dev instance)
+  # 5. ElasticSearch (Local dev instance)
   elasticsearch:
     image: docker.elastic.co/elasticsearch/elasticsearch:8.11.1
     environment:
@@ -68,7 +70,7 @@ services:
     ports:
       - "9201:9200"
 
-  # 5. HuggingFace Model Server (Ticket 2.5)
+  # 6. HuggingFace Model Server
   hf-server:
     build:
       context: .
@@ -83,7 +85,7 @@ services:
       timeout: 10s
       retries: 3
 
-  # 6. Ingestion Pipeline (Congress.gov → Elasticsearch from backend-dev)
+  # 7. Ingestion Pipeline
   ingestion:
     build:
       context: .

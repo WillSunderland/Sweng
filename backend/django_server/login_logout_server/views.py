@@ -4,8 +4,16 @@ from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework import status
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
-from .models import Todo
+from .models import Todo, AuditLog
 from .serializers import SERIALIZE_TODO, REGISTER_USER_SERIALIZER, SERIALIZE_USER
+
+
+def _get_ip(request):
+    """Extract client IP from request."""
+    x_forwarded_for = request.META.get("HTTP_X_FORWARDED_FOR")
+    if x_forwarded_for:
+        return x_forwarded_for.split(",")[0].strip()
+    return request.META.get("REMOTE_ADDR")
 
 
 # ------------------------------
@@ -26,6 +34,7 @@ def RegisterUser(request):
 # ------------------------------
 class ObtainCustomTokenPairView(TokenObtainPairView):
     def post(self, request, *args, **kwargs):
+        username = request.data.get("username", "")
         try:
             response = super().post(request, *args, **kwargs)
             tokens = response.data
@@ -33,12 +42,26 @@ class ObtainCustomTokenPairView(TokenObtainPairView):
             access_token = tokens.get("access")
             refresh_token = tokens.get("refresh")
 
+            # Audit log — successful login
+            from django.contrib.auth.models import User
+            try:
+                user = User.objects.get(username=username)
+                AuditLog.objects.create(
+                    user=user,
+                    username_attempt=username,
+                    event="login",
+                    ip_address=_get_ip(request),
+                    success=True,
+                )
+            except User.DoesNotExist:
+                pass
+
             resp = Response({"success": True})
             resp.set_cookie(
                 key="token_access",
                 value=access_token,
                 httponly=True,
-                secure=False,  # True if using HTTPS in production
+                secure=False,
                 samesite="Lax",
                 path="/",
             )
@@ -53,6 +76,14 @@ class ObtainCustomTokenPairView(TokenObtainPairView):
             resp.data.update(tokens)
             return resp
         except Exception as e:
+            # Audit log — failed login
+            AuditLog.objects.create(
+                user=None,
+                username_attempt=username,
+                event="login_failed",
+                ip_address=_get_ip(request),
+                success=False,
+            )
             print(e)
             return Response({"success": False}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -73,6 +104,14 @@ class TokenCustomRefreshView(TokenRefreshView):
             response = super().post(request, *args, **kwargs)
             tokens = response.data
             access_token = tokens.get("access")
+
+            # Audit log — token refresh
+            AuditLog.objects.create(
+                user=request.user if request.user.is_authenticated else None,
+                event="token_refresh",
+                ip_address=_get_ip(request),
+                success=True,
+            )
 
             resp = Response({"refreshed": True})
             resp.set_cookie(
@@ -95,6 +134,14 @@ class TokenCustomRefreshView(TokenRefreshView):
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def UserLogout(request):
+    # Audit log — logout
+    AuditLog.objects.create(
+        user=request.user,
+        username_attempt=request.user.username,
+        event="logout",
+        ip_address=_get_ip(request),
+        success=True,
+    )
     resp = Response({"success": True})
     resp.delete_cookie("token_access", path="/")
     resp.delete_cookie("token_refresh", path="/")
