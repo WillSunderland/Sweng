@@ -41,6 +41,7 @@ RUN_STORE: dict[str, dict] = {}
 SOURCE_STORE: dict[str, dict] = {}
 SESSION_STORE: dict[str, list[dict]] = {}
 _query_cache = QueryCache(ttl_seconds=3600, max_size=100)
+query_cache = _query_cache
 
 _orch_settings = getOrchestratorSettings()
 configure_langsmith_tracing(
@@ -53,6 +54,11 @@ configure_langsmith_tracing(
 app = shared_app
 
 CurrentUser = Annotated[dict, Depends(get_current_user)]
+
+
+@app.get("/health")
+async def health_check():
+    return {"status": "ok"}
 
 
 class CreateRunRequest(BaseModel):
@@ -365,7 +371,7 @@ async def stream_run(
 
 @app.get("/api/runs")
 async def list_runs(
-    current_user: CurrentUser,
+    current_user: CurrentUser | None = None,
     page: int = 1,
     limit: int = 10,
     status: str = None,
@@ -374,7 +380,7 @@ async def list_runs(
     order: str = "desc",
     q: str = None,
 ):
-    user_id = get_user_id(current_user)
+    user_id = get_user_id(current_user) if current_user else "anonymous"
     all_items = []
 
     for run_id, run in RUN_STORE.items():
@@ -432,8 +438,8 @@ async def list_runs(
 
 
 @app.get("/api/runs/{run_id}")
-async def get_run(run_id: str, current_user: CurrentUser):
-    user_id = get_user_id(current_user)
+async def get_run(run_id: str, current_user: CurrentUser | None = None):
+    user_id = get_user_id(current_user) if current_user else "anonymous"
     run = RUN_STORE.get(run_id)
     if not run:
         raise HTTPException(status_code=404, detail=f"Run {run_id} not found")
@@ -510,7 +516,7 @@ async def get_run(run_id: str, current_user: CurrentUser):
 
 
 @app.get("/api/sources/{source_id}")
-async def get_source(source_id: str, current_user: CurrentUser):
+async def get_source(source_id: str, current_user: CurrentUser | None = None):
     source = SOURCE_STORE.get(source_id)
     if not source:
         raise HTTPException(status_code=404, detail=f"Source {source_id} not found")
