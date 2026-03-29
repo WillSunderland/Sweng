@@ -71,3 +71,7 @@ We enforce coding standards using `pre-commit`.
 - **Sprint 2 (Weeks 7-10):** RAG Pipeline & LangGraph Integration.
 - **Sprint 3 (Weeks 11-13):** Final UI & "Green" Computing Indicators.
 x
+
+Maybe use these:
+docker-compose exec django python manage.py makemigrations login_logout_server
+docker-compose exec django python manage.py migrate
