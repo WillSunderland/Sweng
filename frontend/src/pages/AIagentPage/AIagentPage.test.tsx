@@ -240,7 +240,7 @@ describe('AIagentPage', () => {
       );
     });
 
-    it('renders trust-highlighted structured segments when structured_answer is returned', async () => {
+    it('renders the summary and citations when structured_answer is returned', async () => {
       mockCreateRun();
       mockFetch.mockResolvedValueOnce({
         ok: true,
@@ -292,7 +292,7 @@ describe('AIagentPage', () => {
           },
           documents: [
             {
-              id: 'run_test_src_001',
+              id: 'NV-HB-123',
               title: 'Nevada Tax Reform Act',
               bill_id: 'NV-HB-123',
               bill_type: 'HB',
@@ -311,13 +311,15 @@ describe('AIagentPage', () => {
       fireEvent.change(input, { target: { value: 'What does Nevada HB 123 do?' } });
       fireEvent.click(screen.getByRole('button', { name: /send message/i }));
 
-      await waitFor(() => expect(screen.getByText('AI Analysis')).toBeInTheDocument());
-      expect(screen.getByText('Verbatim Law Text')).toBeInTheDocument();
-      expect(screen.getByText('VERBATIM')).toBeInTheDocument();
+      await waitFor(() =>
+        expect(screen.getByText(/Nevada requires a new threshold/i)).toBeInTheDocument()
+      );
+      expect(screen.getByText('Sources')).toBeInTheDocument();
+      expect(screen.getByText('[NV-HB-123]')).toBeInTheDocument();
+      fireEvent.click(screen.getByRole('button', { name: /toggle excerpt/i }));
       expect(
         screen.getByText(/Section 5: All individuals earning above \$80,000 shall be subject to/i)
       ).toBeInTheDocument();
-      expect(screen.getAllByText('[NV-HB-123]').length).toBeGreaterThan(0);
     });
 
     it('shows chat header bar after first message', async () => {
@@ -417,15 +419,12 @@ describe('AIagentPage', () => {
       renderPage();
       fireEvent.click(screen.getByText('Regulatory Analysis'));
 
-      await waitFor(() =>
-        expect(mockFetch).toHaveBeenCalledWith(
-          'http://localhost:8000/api/runs',
-          expect.objectContaining({
-            method: 'POST',
-            body: expect.stringContaining('regulatory'),
-          })
-        )
-      );
+      await waitFor(() => {
+        const [url, options] = mockFetch.mock.calls[0] ?? [];
+        expect(String(url)).toMatch(/\/api\/runs$/);
+        expect(options?.method).toBe('POST');
+        expect(String(options?.body)).toMatch(/regulatory/i);
+      });
     });
 
     // it('task cards are disabled while typing', async () => {
