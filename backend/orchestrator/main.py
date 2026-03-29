@@ -243,7 +243,9 @@ async def _stream_run_events(query: str, priority: str | None, user_id: str):
 
 
 @app.post("/api/runs", status_code=201)
-async def create_run(request: CreateRunRequest, current_user: CurrentUser | None = None):
+async def create_run(
+    request: CreateRunRequest, current_user: CurrentUser | None = None
+):
     user_id = get_user_id(current_user) if current_user else "anonymous"
     run_id = f"run_{uuid.uuid4().hex[:12]}"
     created_at = get_iso_timestamp()
