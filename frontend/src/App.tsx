@@ -10,6 +10,7 @@ import AboutPage from './pages/AboutPage/AboutPage';
 import Login from "./pages/Login/Login";
 import Register from "./pages/Register/Register";
 import AIagentPage from "./pages/AIagentPage/AIagentPage";
+import GreenComputingPage from "./pages/GreenComputingPage/GreenComputingPage";
 import './App.css';
 
 function App() {
@@ -39,6 +40,7 @@ function App() {
         <Route path="/history" element={<HistoryPage darkMode={darkMode} toggleDarkMode={toggleDarkMode} />} />
         <Route path="/about" element={<AboutPage />} />
         <Route path="/ai-agent" element={<AIagentPage darkMode={darkMode} toggleDarkMode={toggleDarkMode} />} />
+        <Route path="/green-computing" element={<GreenComputingPage darkMode={darkMode} toggleDarkMode={toggleDarkMode} />} />
       </Routes>
     </Router>
   );
