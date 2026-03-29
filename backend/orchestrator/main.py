@@ -268,6 +268,7 @@ async def create_run(request: CreateRunRequest, current_user: CurrentUser):
     cached = None if history_for_query else _query_cache.get(request.query)
 
     if cached:
+
         class _CachedResult:
             def __init__(self, payload: dict):
                 self.answer = payload.get("answer", "")
@@ -337,7 +338,9 @@ async def create_run(request: CreateRunRequest, current_user: CurrentUser):
         if scoped_key not in SESSION_STORE:
             SESSION_STORE[scoped_key] = []
         SESSION_STORE[scoped_key].append({"role": "user", "content": request.query})
-        SESSION_STORE[scoped_key].append({"role": "assistant", "content": result.answer})
+        SESSION_STORE[scoped_key].append(
+            {"role": "assistant", "content": result.answer}
+        )
         SESSION_STORE[scoped_key] = SESSION_STORE[scoped_key][-40:]
 
     return {"runId": run_id, "status": RUN_STATUS_RUNNING, "createdAt": created_at}
@@ -390,7 +393,9 @@ async def list_runs(
             "tokens_used": result.get("token_count"),
             "model_used": result.get("model_used"),
             "provider": result.get("provider"),
-            "sourceCount": len([k for k in SOURCE_STORE if k.startswith(f"{run_id}_src_")]),
+            "sourceCount": len(
+                [k for k in SOURCE_STORE if k.startswith(f"{run_id}_src_")]
+            ),
         }
         if status and item["status"] != status:
             continue
@@ -413,7 +418,7 @@ async def list_runs(
     total = len(all_items)
     total_pages = max(1, (total + limit - 1) // limit)
     start = (page - 1) * limit
-    paged = all_items[start: start + limit]
+    paged = all_items[start : start + limit]
 
     return {
         "items": paged,
@@ -517,7 +522,11 @@ async def get_session(session_id: str, current_user: CurrentUser):
     history = SESSION_STORE.get(scoped_key)
     if history is None:
         raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
-    return {"session_id": session_id, "history": history, "turn_count": len(history) // 2}
+    return {
+        "session_id": session_id,
+        "history": history,
+        "turn_count": len(history) // 2,
+    }
 
 
 @app.delete("/api/sessions/{session_id}")
@@ -556,8 +565,12 @@ async def dashboard_summary(current_user: CurrentUser):
     user_id = get_user_id(current_user)
     user_runs = {k: v for k, v in RUN_STORE.items() if v.get("user_id") == user_id}
     total = len(user_runs)
-    completed = sum(1 for r in user_runs.values() if r.get("status") == RUN_STATUS_COMPLETED)
-    running = sum(1 for r in user_runs.values() if r.get("status") == RUN_STATUS_RUNNING)
+    completed = sum(
+        1 for r in user_runs.values() if r.get("status") == RUN_STATUS_COMPLETED
+    )
+    running = sum(
+        1 for r in user_runs.values() if r.get("status") == RUN_STATUS_RUNNING
+    )
     drafts = sum(1 for r in user_runs.values() if r.get("status") == "draft")
     high = sum(1 for r in user_runs.values() if r.get("priority") == "high")
     medium = sum(1 for r in user_runs.values() if r.get("priority") == "medium")
@@ -593,15 +606,17 @@ async def system_activity(current_user: CurrentUser):
         if run.get("user_id") != user_id:
             continue
         result = run.get("result", {})
-        activities.append({
-            "runId": run_id,
-            "type": "query",
-            "query": run.get("query", ""),
-            "status": run.get("status", "running"),
-            "model_used": result.get("model_used"),
-            "provider": result.get("provider"),
-            "timestamp": run.get("createdAt", ""),
-        })
+        activities.append(
+            {
+                "runId": run_id,
+                "type": "query",
+                "query": run.get("query", ""),
+                "status": run.get("status", "running"),
+                "model_used": result.get("model_used"),
+                "provider": result.get("provider"),
+                "timestamp": run.get("createdAt", ""),
+            }
+        )
     return {"activities": activities}
 
 

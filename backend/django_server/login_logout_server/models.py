@@ -17,7 +17,11 @@ class AuditLog(models.Model):
     ]
 
     user = models.ForeignKey(
-        User, on_delete=models.SET_NULL, null=True, blank=True, related_name="audit_logs"
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="audit_logs",
     )
     username_attempt = models.CharField(max_length=150, blank=True)
     event = models.CharField(max_length=20, choices=EVENT_CHOICES)

@@ -44,6 +44,7 @@ class ObtainCustomTokenPairView(TokenObtainPairView):
 
             # Audit log — successful login
             from django.contrib.auth.models import User
+
             try:
                 user = User.objects.get(username=username)
                 AuditLog.objects.create(
