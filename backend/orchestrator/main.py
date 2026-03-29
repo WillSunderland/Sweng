@@ -13,6 +13,7 @@ PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
+
 from fastapi import Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
@@ -32,18 +33,18 @@ from backend.orchestrator.langsmith_tracing import (
     trace_node,
     build_trace_metadata,
 )
+from backend.orchestrator.url_utils import resolve_source_url
+
+
 try:
     from backend.orchestrator.semantic_retrieval import SemanticRetriever
 except Exception as exc:  # pragma: no cover - fallback for runtime import issues
-    logging.getLogger(__name__).warning(
-        "Failed to import SemanticRetriever: %s", exc
-    )
+    logging.getLogger(__name__).warning("Failed to import SemanticRetriever: %s", exc)
 
     class SemanticRetriever:  # type: ignore[no-redef]
         def get_index_stats(self):
             return {"ok": False, "error": "SemanticRetriever unavailable"}
 
-from backend.orchestrator.url_utils import resolve_source_url
 
 logger = logging.getLogger(__name__)
 
