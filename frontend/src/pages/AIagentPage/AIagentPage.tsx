@@ -5,7 +5,7 @@ import './AIagentPage.css';
 import sunIcon from '../../assets/lighModeSun.png';
 import moonIcon from '../../assets/darkModeMoon.png';
 import { Brain, Search, BookOpen, CheckCircle2, Leaf, Paperclip, Cpu, Sparkles, AlertCircle } from 'lucide-react';
-import { API_BASE_URL, POLL_INTERVAL_MS, POLL_TIMEOUT_MS } from '../../constants/apiConfig';
+import { API_BASE_URL, POLL_INTERVAL_MS, POLL_TIMEOUT_MS, buildAuthHeaders, getAuthToken } from '../../constants/apiConfig';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -210,7 +210,10 @@ function titleFromId(id: string): string {
 
 async function fetchSourceDetail(sourceId: string): Promise<SourceDetail | null> {
   try {
-    const res = await fetch(`${BASE_URL}/api/sources/${sourceId}`);
+    const res = await fetch(`${BASE_URL}/api/sources/${sourceId}`, {
+      headers: buildAuthHeaders(),
+      credentials: 'include',
+    });
     if (!res.ok) return null;
     return await res.json();
   } catch {
@@ -284,8 +287,9 @@ async function parseResponse(run: RunResult): Promise<ParsedResponse> {
 async function createRun(query: string): Promise<string> {
   const res = await fetch(`${BASE_URL}/api/runs`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: buildAuthHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify({ query }),
+    credentials: 'include',
   });
   if (!res.ok) throw new Error(`Failed to start run (${res.status}): ${await res.text()}`);
   const data = await res.json();
@@ -295,7 +299,10 @@ async function createRun(query: string): Promise<string> {
 async function pollRun(runId: string): Promise<RunResult> {
   const deadline = Date.now() + POLL_TIMEOUT_MS;
   while (Date.now() < deadline) {
-    const res = await fetch(`${BASE_URL}/api/runs/${runId}`);
+    const res = await fetch(`${BASE_URL}/api/runs/${runId}`, {
+      headers: buildAuthHeaders(),
+      credentials: 'include',
+    });
     if (!res.ok) throw new Error(`Poll failed (${res.status})`);
     const data: RunResult = await res.json();
     if (data.status === 'completed') return data;
@@ -338,8 +345,13 @@ function useAgentStream() {
     return new Promise((resolve, reject) => {
       setState({ currentEvent: null, events: [], isStreaming: true, completedRunId: null, streamError: null });
 
-      const url = `${BASE_URL}/api/runs/stream?query=${encodeURIComponent(query)}`;
-      const es = new EventSource(url);
+      const streamUrl = new URL(`${BASE_URL}/api/runs/stream`, window.location.origin);
+      streamUrl.searchParams.set('query', query);
+      const token = getAuthToken();
+      if (token) {
+        streamUrl.searchParams.set('token', token);
+      }
+      const es = new EventSource(streamUrl.toString(), { withCredentials: true });
       esRef.current = es;
       const localEvents: AgentEvent[] = [];
 

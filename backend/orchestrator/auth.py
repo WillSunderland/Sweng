@@ -5,7 +5,7 @@ import logging
 from typing import Optional
 
 import jwt
-from fastapi import HTTPException, Security, Cookie
+from fastapi import HTTPException, Security, Cookie, Query
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 logger = logging.getLogger(__name__)
@@ -39,6 +39,7 @@ def _decode_token(token: str) -> dict:
 def get_current_user(
     credentials: Optional[HTTPAuthorizationCredentials] = Security(security),
     token_access: Optional[str] = Cookie(default=None),
+    token_query: Optional[str] = Query(default=None, alias="token"),
 ) -> dict:
     """
     Validate JWT from either:
@@ -54,6 +55,8 @@ def get_current_user(
         token = credentials.credentials
     elif token_access:
         token = token_access
+    elif token_query:
+        token = token_query
 
     if not token:
         raise HTTPException(

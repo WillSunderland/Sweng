@@ -51,7 +51,7 @@ interface FormProps {
 
 const LoginForm: React.FC<FormProps> = ({ onSwitchView, onClose }) => {
   const navigate = useNavigate();
-  const [email, setEmail] = useState('');
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -64,13 +64,17 @@ const LoginForm: React.FC<FormProps> = ({ onSwitchView, onClose }) => {
       const res = await fetch(`${API_BASE_URL}/api/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ username, password }),
+        credentials: 'include',
       });
 
       if (!res.ok) throw new Error('Invalid credentials');
 
       const data = await res.json();
-      localStorage.setItem('token', data.token);
+      const token = data.access ?? data.token;
+      if (token) {
+        localStorage.setItem('token', token);
+      }
       onClose();
       navigate('/workspace');
     } catch {
@@ -84,14 +88,14 @@ const LoginForm: React.FC<FormProps> = ({ onSwitchView, onClose }) => {
 
       <div>
         <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">
-          Email Address
+          Username or Email
         </label>
         <input
-          type="email"
+          type="text"
           placeholder="legal.professional@firm.com"
           className="w-full border border-slate-200 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
+          value={username}
+          onChange={(e) => setUsername(e.target.value)}
           required
         />
       </div>
@@ -146,6 +150,7 @@ const LoginForm: React.FC<FormProps> = ({ onSwitchView, onClose }) => {
 
 const RegisterForm: React.FC<FormProps> = ({ onSwitchView, onClose }) => {
   const navigate = useNavigate();
+  const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -153,7 +158,7 @@ const RegisterForm: React.FC<FormProps> = ({ onSwitchView, onClose }) => {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
 
-  function handleRegister(e: React.FormEvent) {
+  async function handleRegister(e: React.FormEvent) {
     e.preventDefault();
     setError('');
 
@@ -162,13 +167,64 @@ const RegisterForm: React.FC<FormProps> = ({ onSwitchView, onClose }) => {
       return;
     }
 
-    onClose();
-    navigate('/workspace');
+    const resolvedUsername = username.trim() || email.trim();
+    if (!resolvedUsername) {
+      setError('Username or email is required');
+      return;
+    }
+
+    try {
+      const registerRes = await fetch(`${API_BASE_URL}/api/auth/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: resolvedUsername, email, password }),
+      });
+
+      if (!registerRes.ok) {
+        const msg = await registerRes.text();
+        throw new Error(msg || 'Failed to register');
+      }
+
+      const loginRes = await fetch(`${API_BASE_URL}/api/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: resolvedUsername, password }),
+        credentials: 'include',
+      });
+
+      if (!loginRes.ok) {
+        const msg = await loginRes.text();
+        throw new Error(msg || 'Failed to login');
+      }
+
+      const data = await loginRes.json();
+      const token = data.access ?? data.token;
+      if (token) {
+        localStorage.setItem('token', token);
+      }
+      onClose();
+      navigate('/workspace');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Registration failed');
+    }
   }
 
   return (
     <form onSubmit={handleRegister} className="space-y-4">
       {error && <p className="text-red-500 text-sm text-center">{error}</p>}
+
+      <div>
+        <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">
+          Username
+        </label>
+        <input
+          type="text"
+          placeholder="legal.professional"
+          className="w-full border border-slate-200 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
+          value={username}
+          onChange={(e) => setUsername(e.target.value)}
+        />
+      </div>
 
       <div>
         <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">

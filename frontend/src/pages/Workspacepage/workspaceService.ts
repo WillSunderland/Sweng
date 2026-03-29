@@ -1,4 +1,4 @@
-import { API_BASE_URL } from '../../constants/apiConfig';
+import { API_BASE_URL, buildAuthHeaders } from '../../constants/apiConfig';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -134,7 +134,10 @@ export async function fetchRuns(params: {
     ...(q                  && { q }),
   });
 
-  const res = await fetch(`${API_BASE_URL}/api/runs?${qs}`);
+  const res = await fetch(`${API_BASE_URL}/api/runs?${qs}`, {
+    headers: buildAuthHeaders(),
+    credentials: 'include',
+  });
   if (!res.ok) throw new Error(`Failed to fetch runs: ${res.status}`);
   return res.json();
 }
@@ -145,8 +148,9 @@ export async function createRun(
 ): Promise<CreateRunResponse> {
   const res = await fetch(`${API_BASE_URL}/api/runs`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: buildAuthHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify({ query, priority }),
+    credentials: 'include',
   });
   if (!res.ok) throw new Error(`Failed to create run: ${res.status}`);
   return res.json();
@@ -158,8 +162,9 @@ export async function patchRun(
 ): Promise<PatchRunResponse> {
   const res = await fetch(`${API_BASE_URL}/api/runs/${runId}`, {
     method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
+    headers: buildAuthHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify(updates),
+    credentials: 'include',
   });
   if (!res.ok) throw new Error(`Failed to update run: ${res.status}`);
   return res.json();
@@ -168,10 +173,22 @@ export async function patchRun(
 // Fetches counts for all four tabs with 4 parallel requests (limit=1 to minimise data)
 export async function fetchTabCounts(): Promise<TabCounts> {
   const [all, drafts, completed, highPriority] = await Promise.all([
-    fetch(`${API_BASE_URL}/api/runs?page=1&limit=1`).then(r => r.json()),
-    fetch(`${API_BASE_URL}/api/runs?page=1&limit=1&status=draft`).then(r => r.json()),
-    fetch(`${API_BASE_URL}/api/runs?page=1&limit=1&status=completed`).then(r => r.json()),
-    fetch(`${API_BASE_URL}/api/runs?page=1&limit=1&priority=high`).then(r => r.json()),
+    fetch(`${API_BASE_URL}/api/runs?page=1&limit=1`, {
+      headers: buildAuthHeaders(),
+      credentials: 'include',
+    }).then(r => r.json()),
+    fetch(`${API_BASE_URL}/api/runs?page=1&limit=1&status=draft`, {
+      headers: buildAuthHeaders(),
+      credentials: 'include',
+    }).then(r => r.json()),
+    fetch(`${API_BASE_URL}/api/runs?page=1&limit=1&status=completed`, {
+      headers: buildAuthHeaders(),
+      credentials: 'include',
+    }).then(r => r.json()),
+    fetch(`${API_BASE_URL}/api/runs?page=1&limit=1&priority=high`, {
+      headers: buildAuthHeaders(),
+      credentials: 'include',
+    }).then(r => r.json()),
   ]);
   return {
     'all-cases':     all.total ?? 0,
@@ -182,25 +199,37 @@ export async function fetchTabCounts(): Promise<TabCounts> {
 }
 
 export async function fetchResearchTrends(): Promise<ResearchTrendsResponse> {
-  const res = await fetch(`${API_BASE_URL}/api/dashboard/research-trends`);
+  const res = await fetch(`${API_BASE_URL}/api/dashboard/research-trends`, {
+    headers: buildAuthHeaders(),
+    credentials: 'include',
+  });
   if (!res.ok) throw new Error(`Failed to fetch trends: ${res.status}`);
   return res.json();
 }
 
 export async function fetchSystemActivity(): Promise<SystemActivityResponse> {
-  const res = await fetch(`${API_BASE_URL}/api/dashboard/system-activity`);
+  const res = await fetch(`${API_BASE_URL}/api/dashboard/system-activity`, {
+    headers: buildAuthHeaders(),
+    credentials: 'include',
+  });
   if (!res.ok) throw new Error(`Failed to fetch activity: ${res.status}`);
   return res.json();
 }
 
 export async function fetchAiEfficiency(): Promise<AiEfficiencyResponse> {
-  const res = await fetch(`${API_BASE_URL}/api/dashboard/ai-efficiency`);
+  const res = await fetch(`${API_BASE_URL}/api/dashboard/ai-efficiency`, {
+    headers: buildAuthHeaders(),
+    credentials: 'include',
+  });
   if (!res.ok) throw new Error(`Failed to fetch efficiency: ${res.status}`);
   return res.json();
 }
 
 export async function fetchDashboardSummary(): Promise<DashboardSummaryResponse> {
-  const res = await fetch(`${API_BASE_URL}/api/dashboard/summary`);
+  const res = await fetch(`${API_BASE_URL}/api/dashboard/summary`, {
+    headers: buildAuthHeaders(),
+    credentials: 'include',
+  });
   if (!res.ok) throw new Error(`Failed to fetch summary: ${res.status}`);
   return res.json();
 }

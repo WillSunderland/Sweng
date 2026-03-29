@@ -19,13 +19,17 @@ export default function Login() {
       const res = await fetch(`${API_BASE_URL}/api/auth/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ username: email, password }),
+        credentials: "include",
       });
 
       if (!res.ok) throw new Error("Invalid credentials");
 
       const data = await res.json();
-      localStorage.setItem("token", data.token);
+      const token = data.access ?? data.token;
+      if (token) {
+        localStorage.setItem("token", token);
+      }
       navigate("/workspace");
     } catch {
       setError("Email or password incorrect");
@@ -40,11 +44,11 @@ export default function Login() {
         <form onSubmit={handleLogin} className="space-y-5">
           <div>
             <div className="flex justify-between text-sm text-gray-600">
-              <label className="font-medium">EMAIL ADDRESS</label>
+              <label className="font-medium">USERNAME OR EMAIL</label>
             </div>
 
             <input
-              type="email"
+              type="text"
               placeholder="legal.professional@firm.com"
               className="w-full mt-1 border rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
               value={email}
