@@ -13,7 +13,6 @@ PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
-
 from fastapi import Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
@@ -34,7 +33,6 @@ from backend.orchestrator.langsmith_tracing import (
     build_trace_metadata,
 )
 from backend.orchestrator.url_utils import resolve_source_url
-
 
 try:
     from backend.orchestrator.semantic_retrieval import SemanticRetriever
