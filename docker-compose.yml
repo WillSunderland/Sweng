@@ -17,6 +17,7 @@ services:
       - MCP_SERVER_URL=http://mcp-server:8001
       - ELASTICSEARCH_URL=http://elasticsearch:9200
       - OPENSEARCH_HOST=elasticsearch
+      - OPENSEARCH_PORT=9200
       - OPENSEARCH_INDEX=legislation_chunks
       - INDEX_NAME=${INDEX_NAME:-legislation_chunks}
       - EMBED_MODEL=${EMBED_MODEL:-all-MiniLM-L6-v2}
