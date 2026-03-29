@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from enum import Enum
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -43,7 +44,9 @@ class SearchResult(BaseModel):
 
 class SourceInfo(BaseModel):
     title: str
+    source_id: str = ""
     bill_id: str = ""
+    chunk_id: str = ""
     state: str = ""
     bill_type: str = ""
     bill_number: str = ""
@@ -53,8 +56,64 @@ class SourceInfo(BaseModel):
     relevance_score: float = 0.0
 
 
+# ── Ticket 5.2: Structured Response Schema for Trust UI ──────────────────────
+
+
+class SegmentType(str, Enum):
+    """Discriminator for response segments."""
+
+    GENERATED = "generated"
+    VERBATIM = "verbatim"
+
+
+class CitationMeta(BaseModel):
+    """Citation metadata linking a verbatim quote back to its source document."""
+
+    source_id: str = Field(..., description="Unique identifier for the source document")
+    title: str = Field(..., description="Human-readable title of the source document")
+    bill_id: str = ""
+    chunk_id: str = Field(
+        default="", description="Chunk reference within the source document"
+    )
+    bill_type: str = ""
+    bill_number: str = ""
+    session: str = ""
+    state: str = ""
+    policy_area: str = ""
+    relevance_score: float = 0.0
+
+
+class ResponseSegment(BaseModel):
+    """A single segment of the structured response."""
+
+    type: SegmentType = Field(
+        ..., description="Whether this segment is AI-generated or verbatim quoted text"
+    )
+    text: str = Field(..., description="The text content of this segment")
+    citations: list[CitationMeta] = Field(
+        default_factory=list,
+        description="Citation metadata (populated for verbatim segments)",
+    )
+
+
+class StructuredAnswer(BaseModel):
+    """Top-level structured answer containing typed segments."""
+
+    raw_answer: str = Field(
+        ..., description="The original unstructured LLM answer for backwards compat"
+    )
+    segments: list[ResponseSegment] = Field(
+        default_factory=list,
+        description="Ordered list of generated/verbatim segments with citation metadata",
+    )
+
+
 class QueryResponse(BaseModel):
     answer: str
+    structured_answer: StructuredAnswer | None = Field(
+        default=None,
+        description="Structured response with typed segments for trust UI rendering",
+    )
     sources: list[SourceInfo] = Field(default_factory=list)
     model_used: str | None = None
     provider: str | None = None
