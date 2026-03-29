@@ -240,6 +240,88 @@ describe('AIagentPage', () => {
       );
     });
 
+    it('renders the summary and citations when structured_answer is returned', async () => {
+      mockCreateRun();
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          runId: 'test-run-id-123',
+          status: 'completed',
+          answer: 'Nevada requires a new threshold.',
+          structured_answer: {
+            raw_answer:
+              'Nevada requires a new threshold. «VERBATIM»Section 5: All individuals earning above $80,000 shall be subject to...«/VERBATIM» [Source: Nevada Tax Reform Act]',
+            segments: [
+              {
+                type: 'generated',
+                text: 'Nevada requires a new threshold.',
+                citations: [
+                  {
+                    source_id: 'NV-HB-123',
+                    title: 'Nevada Tax Reform Act',
+                    bill_id: 'NV-HB-123',
+                    chunk_id: 'chunk_001',
+                    bill_type: 'HB',
+                    bill_number: '123',
+                    session: '2024',
+                    state: 'Nevada',
+                    policy_area: 'Taxation',
+                    relevance_score: 0.95,
+                  },
+                ],
+              },
+              {
+                type: 'verbatim',
+                text: 'Section 5: All individuals earning above $80,000 shall be subject to...',
+                citations: [
+                  {
+                    source_id: 'NV-HB-123',
+                    title: 'Nevada Tax Reform Act',
+                    bill_id: 'NV-HB-123',
+                    chunk_id: 'chunk_001',
+                    bill_type: 'HB',
+                    bill_number: '123',
+                    session: '2024',
+                    state: 'Nevada',
+                    policy_area: 'Taxation',
+                    relevance_score: 0.95,
+                  },
+                ],
+              },
+            ],
+          },
+          documents: [
+            {
+              id: 'NV-HB-123',
+              title: 'Nevada Tax Reform Act',
+              bill_id: 'NV-HB-123',
+              bill_type: 'HB',
+              bill_number: '123',
+              session: '2024',
+              state: 'Nevada',
+              policy_area: 'Taxation',
+              chunk_text: 'Section 5: All individuals earning above $80,000 shall be subject to...',
+            },
+          ],
+        }),
+      } as Response);
+
+      renderPage();
+      const input = screen.getByPlaceholderText(/ask a legal question/i);
+      fireEvent.change(input, { target: { value: 'What does Nevada HB 123 do?' } });
+      fireEvent.click(screen.getByRole('button', { name: /send message/i }));
+
+      await waitFor(() =>
+        expect(screen.getByText(/Nevada requires a new threshold/i)).toBeInTheDocument()
+      );
+      expect(screen.getByText('Sources')).toBeInTheDocument();
+      expect(screen.getByText('[NV-HB-123]')).toBeInTheDocument();
+      fireEvent.click(screen.getByRole('button', { name: /toggle excerpt/i }));
+      expect(
+        screen.getByText(/Section 5: All individuals earning above \$80,000 shall be subject to/i)
+      ).toBeInTheDocument();
+    });
+
     it('shows chat header bar after first message', async () => {
       mockCreateRun();
       mockPollRun();
@@ -337,15 +419,12 @@ describe('AIagentPage', () => {
       renderPage();
       fireEvent.click(screen.getByText('Regulatory Analysis'));
 
-      await waitFor(() =>
-        expect(mockFetch).toHaveBeenCalledWith(
-          'http://localhost:8000/api/runs',
-          expect.objectContaining({
-            method: 'POST',
-            body: expect.stringContaining('regulatory'),
-          })
-        )
-      );
+      await waitFor(() => {
+        const [url, options] = mockFetch.mock.calls[0] ?? [];
+        expect(String(url)).toMatch(/\/api\/runs$/);
+        expect(options?.method).toBe('POST');
+        expect(String(options?.body)).toMatch(/regulatory/i);
+      });
     });
 
     // it('task cards are disabled while typing', async () => {

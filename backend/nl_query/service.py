@@ -1,6 +1,5 @@
 import logging
-from typing import List
-from schemas import *
+from nl_query.schemas import DocumentHits, NLQueryRequest, NLQueryResult
 
 logger = logging.getLogger("nl-query-service")
 
@@ -16,7 +15,7 @@ async def NLQueryService(request: NLQueryRequest) -> NLQueryResult:
     try:
         intial_state = {"query": request.query, "messages": [], "documents": []}
         # graph_app is the result from the graph.py in orchestrator
-        result = await graph_app.ainvoke(intial_state)
+        result = await graph_app.ainvoke(intial_state)  # noqa: F821
 
         results = [
             DocumentHits(

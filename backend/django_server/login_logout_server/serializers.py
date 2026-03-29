@@ -1,6 +1,5 @@
 from .models import Todo
 
-from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework import serializers
 from django.contrib.auth.models import User
 
@@ -12,6 +11,8 @@ class SERIALIZE_TODO(serializers.ModelSerializer):
 
 
 class REGISTER_USER_SERIALIZER(serializers.ModelSerializer):
+    email = serializers.EmailField(required=False, allow_blank=True, default="")
+
     class Meta:
         model = User
         fields = ["username", "email", "password"]
@@ -19,7 +20,7 @@ class REGISTER_USER_SERIALIZER(serializers.ModelSerializer):
     def create(self, validated_data):
         user = User(
             username=validated_data["username"],
-            email=validated_data["email"],
+            email=validated_data.get("email", ""),
         )
         user.set_password(validated_data["password"])
         user.save()

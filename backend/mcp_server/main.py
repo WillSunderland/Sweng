@@ -1,5 +1,4 @@
 from mcp.server.fastmcp import FastMCP
-from typing import List, Dict
 import logging
 from semantic_retrieval import SemanticRetriever
 

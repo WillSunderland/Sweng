@@ -7,7 +7,7 @@ import { ImpactTraceShowcase } from '../../components/landing/ImpactTraceShowcas
 import { DomainKnowledgeSection } from '../../components/landing/DomainKnowledgeSection/DomainKnowledgeSection';
 import { CTASection } from '../../components/landing/CTASection/CTASection';
 import { Footer } from '../../components/landing/Footer/Footer';
-import { AuthModal } from '../../components/landing/AuthModal/AuthModal';
+import { AuthModal } from '../../components/landing/AuthModal';
 import { ANIMATION_DELAYS_MS } from '../../constants/landingConstants';
 
 type AuthView = 'login' | 'register';

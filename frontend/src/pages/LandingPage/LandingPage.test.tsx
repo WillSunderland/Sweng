@@ -50,13 +50,20 @@ const openRegisterModal = () =>
  * The modal panel — scoped queries are more reliable than global screen queries
  * when there are similarly-named elements outside the modal.
  */
-const getModalPanel = () => screen.getByTestId('auth-modal-panel');
+const getModalPanel = () =>
+  document.querySelector('[data-testid="modal-panel"]') as HTMLElement;
 
-/** Close button has an explicit aria-label for stable selection. */
-const getCloseButton = () => within(getModalPanel()).getByRole('button', { name: /close modal/i });
+/** The first button in the modal panel is always the icon-only close (×) button. */
+const getCloseButton = () => within(getModalPanel()).getAllByRole('button')[0];
 
-/** Email inputs are type="email" which maps to ARIA role "textbox". */
-const getEmailInput = () => screen.getByRole('textbox');
+/** Login identifier input (username/email) uses the email-like placeholder. */
+const getLoginIdentifierInput = () => screen.getByPlaceholderText('legal.professional@firm.com');
+
+/** Register username input uses the username placeholder. */
+const getRegisterUsernameInput = () => screen.getByPlaceholderText('legal.professional');
+
+/** Register email input uses the email placeholder. */
+const getRegisterEmailInput = () => screen.getByPlaceholderText('legal.professional@firm.com');
 
 /**
  * Password inputs have type="password" which has no ARIA role textbox,
@@ -158,7 +165,7 @@ describe('LandingPage', () => {
     it('closes the modal when the × button is clicked', () => {
       renderPage();
       openLoginModal();
-      expect(getEmailInput()).toBeInTheDocument();
+      expect(getLoginIdentifierInput()).toBeInTheDocument();
 
       fireEvent.click(getCloseButton());
 
@@ -168,7 +175,7 @@ describe('LandingPage', () => {
     it('closes the modal when the backdrop overlay is clicked', () => {
       renderPage();
       openLoginModal();
-      expect(getEmailInput()).toBeInTheDocument();
+      expect(getLoginIdentifierInput()).toBeInTheDocument();
 
       // The outermost modal div handles backdrop clicks; clicking it directly triggers onClose
       fireEvent.click(document.querySelector('.fixed.inset-0') as HTMLElement);
@@ -183,7 +190,7 @@ describe('LandingPage', () => {
       // Inner panel has stopPropagation — clicking it must NOT close the modal
       fireEvent.click(getModalPanel());
 
-      expect(getEmailInput()).toBeInTheDocument();
+      expect(getLoginIdentifierInput()).toBeInTheDocument();
     });
   });
 
@@ -227,7 +234,7 @@ describe('LandingPage', () => {
       renderPage();
       openLoginModal();
 
-      fireEvent.change(getEmailInput(), { target: { value: 'user@firm.com' } });
+      fireEvent.change(getLoginIdentifierInput(), { target: { value: 'user@firm.com' } });
       fireEvent.change(getPasswordInputs()[0], { target: { value: 'wrongpass' } });
       fireEvent.click(screen.getByRole('button', { name: /^sign in$/i }));
 
@@ -245,7 +252,7 @@ describe('LandingPage', () => {
       renderPage();
       openLoginModal();
 
-      fireEvent.change(getEmailInput(), { target: { value: 'user@firm.com' } });
+      fireEvent.change(getLoginIdentifierInput(), { target: { value: 'user@firm.com' } });
       fireEvent.change(getPasswordInputs()[0], { target: { value: 'correctpass' } });
       fireEvent.click(screen.getByRole('button', { name: /^sign in$/i }));
 
@@ -263,7 +270,7 @@ describe('LandingPage', () => {
       renderPage();
       openLoginModal();
 
-      fireEvent.change(getEmailInput(), { target: { value: 'user@firm.com' } });
+      fireEvent.change(getLoginIdentifierInput(), { target: { value: 'user@firm.com' } });
       fireEvent.change(getPasswordInputs()[0], { target: { value: 'correctpass' } });
       fireEvent.click(screen.getByRole('button', { name: /^sign in$/i }));
 
@@ -282,7 +289,7 @@ describe('LandingPage', () => {
       renderPage();
       openLoginModal();
 
-      fireEvent.change(getEmailInput(), { target: { value: 'user@firm.com' } });
+      fireEvent.change(getLoginIdentifierInput(), { target: { value: 'user@firm.com' } });
       fireEvent.change(getPasswordInputs()[0], { target: { value: 'pass' } });
       fireEvent.click(screen.getByRole('button', { name: /^sign in$/i }));
 
@@ -334,7 +341,8 @@ describe('LandingPage', () => {
 
   describe('Register form', () => {
     const fillRegisterForm = (password: string, confirmPassword: string) => {
-      fireEvent.change(getEmailInput(), { target: { value: 'newuser@firm.com' } });
+      fireEvent.change(getRegisterUsernameInput(), { target: { value: 'newuser' } });
+      fireEvent.change(getRegisterEmailInput(), { target: { value: 'newuser@firm.com' } });
       const [pwdInput, confirmInput] = getPasswordInputs();
       fireEvent.change(pwdInput, { target: { value: password } });
       fireEvent.change(confirmInput, { target: { value: confirmPassword } });
@@ -360,24 +368,40 @@ describe('LandingPage', () => {
       expect(mockNavigate).not.toHaveBeenCalled();
     });
 
-    it('navigates to /workspace when passwords match', () => {
+    it('navigates to /workspace when passwords match', async () => {
+      mockFetch
+        .mockResolvedValueOnce({ ok: true, text: async () => '' } as Response)
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ token: 'test-token' }),
+        } as Response);
       renderPage();
       openRegisterModal();
 
       fillRegisterForm('mypassword', 'mypassword');
       fireEvent.click(screen.getByRole('button', { name: /^create account$/i }));
 
-      expect(mockNavigate).toHaveBeenCalledWith('/workspace');
+      await waitFor(() => {
+        expect(mockNavigate).toHaveBeenCalledWith('/workspace');
+      });
     });
 
-    it('closes the modal after successful registration', () => {
+    it('closes the modal after successful registration', async () => {
+      mockFetch
+        .mockResolvedValueOnce({ ok: true, text: async () => '' } as Response)
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ token: 'test-token' }),
+        } as Response);
       renderPage();
       openRegisterModal();
 
       fillRegisterForm('mypassword', 'mypassword');
       fireEvent.click(screen.getByRole('button', { name: /^create account$/i }));
 
-      expect(document.querySelectorAll('input[type="email"]')).toHaveLength(0);
+      await waitFor(() => {
+        expect(document.querySelectorAll('input[type="email"]')).toHaveLength(0);
+      });
     });
 
     it('clears the mismatch error once the user fixes the passwords and resubmits', () => {

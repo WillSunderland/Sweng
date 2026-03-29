@@ -4,6 +4,8 @@ import propylonLogo from '../../assets/propylon_logo.svg';
 import './AIagentPage.css';
 import sunIcon from '../../assets/lighModeSun.png';
 import moonIcon from '../../assets/darkModeMoon.png';
+import { Brain, Search, BookOpen, CheckCircle2, Leaf, Paperclip, Cpu, Sparkles, AlertCircle } from 'lucide-react';
+import { API_BASE_URL, POLL_INTERVAL_MS, POLL_TIMEOUT_MS, buildAuthHeaders, getAuthToken } from '../../constants/apiConfig';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -20,6 +22,13 @@ interface ParsedResponse {
   citations: Citation[];
 }
 
+// Green metrics captured per query from real backend values (polling fallback path)
+interface GreenMetrics {
+  carbonG: number;
+  tokensUsed: number;
+  latencyMs: number;
+}
+
 interface Message {
   id: number;
   type: 'user' | 'assistant' | 'error';
@@ -28,6 +37,8 @@ interface Message {
   time: string;
   runId?: string;
   routedTo?: string;
+  metrics?: GreenMetrics;       // polling path carbon data
+  streamEvents?: AgentEvent[];  // SSE path stage history
 }
 
 interface RetrievedDocument {
@@ -80,6 +91,15 @@ interface RunResult {
   references?: {
     sourceIds: string[];
   };
+  // Real green metrics from backend (used when SSE streaming is unavailable)
+  reasoningPath?: {
+    carbonTotalG?: number;
+    latencyMs?: number;
+    tokensUsed?: number;
+    trustScore?: number;
+    engine?: string;
+    steps?: unknown[];
+  };
 }
 
 interface SourceDetail {
@@ -97,75 +117,66 @@ interface SourceDetail {
   url?: string;
 }
 
+// ─── Agent Stream Types ────────────────────────────────────────────────────────
+
+type AgentEventType = 'init' | 'thinking' | 'searching' | 'reading' | 'generating' | 'complete' | 'error';
+
+interface AgentEvent {
+  event: AgentEventType;
+  label: string;
+  elapsed: number;
+  tokenCount?: number;
+  runId?: string;
+  docCount?: number;
+  carbonG?: number;
+}
+
 // ─── Config ───────────────────────────────────────────────────────────────────
 
-const BASE_URL = 'http://localhost:8000';
-const POLL_INTERVAL_MS = 1500;
-const POLL_TIMEOUT_MS = 60_000;
+const BASE_URL = API_BASE_URL;
+const STREAM_TIMEOUT_MS = 90_000;
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 const nowStr = (): string =>
   new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
-/**
- * Aggressively strip ALL inline citation noise and HTML, then decode entities.
- * Handles: [*], [**], [^], [^1], [118-hr-8775_0], (*), (**), (^), "[*][*][^]", etc.
- */
-function cleanText(raw: string): string {
+function cleanText(raw: unknown): string {
   if (!raw) return '';
-  return raw
-    // Remove HTML tags
+  const str = typeof raw === 'string' ? raw : JSON.stringify(raw);
+  return str
     .replace(/<\/?[a-zA-Z][^>]*>/g, ' ')
-    // Remove ALL bracket groups: [anything] — catches [*], [**], [^], [^1], [id], etc.
     .replace(/\[[^\]]*\]/g, '')
-    // Remove parenthetical noise markers: (*), (**), (^), (†), (1), etc.
     .replace(/\([*^†‡§¶\d]+\)/g, '')
-    // Remove stray asterisks (1 or more) that remain after bracket removal
     .replace(/\*+/g, '')
-    // Remove stray carets
     .replace(/\^+/g, '')
-    // Decode HTML entities
     .replace(/&amp;/g, '&')
     .replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>')
     .replace(/&nbsp;/g, ' ')
     .replace(/&quot;/g, '"')
     .replace(/&#39;/g, "'")
-    // Collapse multiple punctuation/spaces left behind
     .replace(/\.{2,}/g, '.')
     .replace(/\s{2,}/g, ' ')
     .trim();
 }
 
-/**
- * Build a congress.gov URL from a congressional bill ID.
- * Pattern:  {congress}-{type}-{number}  or  {congress}-{type}-{number}_{chunk}
- */
 function congressUrl(id: string): string | undefined {
   const base = id.replace(/_\d+$/, '');
   const match = base.match(/^(\d+)-(hr|s|hjres|sjres|hres|sres|hconres|sconres)-(\d+)$/i);
   if (!match) return undefined;
-
   const [, congress, typeRaw, number] = match;
   const typeMap: Record<string, string> = {
-    hr: 'house-bill',
-    s: 'senate-bill',
-    hjres: 'house-joint-resolution',
-    sjres: 'senate-joint-resolution',
-    hres: 'house-resolution',
-    sres: 'senate-resolution',
-    hconres: 'house-concurrent-resolution',
-    sconres: 'senate-concurrent-resolution',
+    hr: 'house-bill', s: 'senate-bill',
+    hjres: 'house-joint-resolution', sjres: 'senate-joint-resolution',
+    hres: 'house-resolution', sres: 'senate-resolution',
+    hconres: 'house-concurrent-resolution', sconres: 'senate-concurrent-resolution',
   };
   const billType = typeMap[typeRaw.toLowerCase()];
   if (!billType) return undefined;
   return `https://www.congress.gov/bill/${congress}th-congress/${billType}/${number}`;
 }
 
-/**
- * Resolve a URL from any available data about a source/document.
- */
 function resolveUrl(
   id: string,
   rawSource?: string,
@@ -174,54 +185,35 @@ function resolveUrl(
   billNumber?: string,
   congress?: string,
 ): string | undefined {
-  
   if (rawSource && /^https?:\/\//.test(rawSource)) return rawSource;
-
-  if (billId) {
-    const fromBillId = congressUrl(billId);
-    if (fromBillId) return fromBillId;
-  }
-
+  if (billId) { const u = congressUrl(billId); if (u) return u; }
   if (billType && billNumber && congress) {
-    const synth = `${congress}-${billType}-${billNumber}`;
-    const fromFields = congressUrl(synth);
-    if (fromFields) return fromFields;
+    const u = congressUrl(`${congress}-${billType}-${billNumber}`);
+    if (u) return u;
   }
-
-  const fromId = congressUrl(id);
-  if (fromId) return fromId;
-
-  return undefined;
+  return congressUrl(id);
 }
 
-/**
- * Build a human-readable title from a bill ID.
- * "118-hr-8775_0" → "H.R. 8775 (118th Congress)"
- */
 function titleFromId(id: string): string {
   const base = id.replace(/_\d+$/, '');
   const match = base.match(/^(\d+)-(hr|s|hjres|sjres|hres|sres|hconres|sconres)-(\d+)$/i);
   if (!match) return id;
-
   const [, congress, typeRaw, number] = match;
   const labelMap: Record<string, string> = {
-    hr: `H.R. ${number}`,
-    s: `S. ${number}`,
-    hjres: `H.J.Res. ${number}`,
-    sjres: `S.J.Res. ${number}`,
-    hres: `H.Res. ${number}`,
-    sres: `S.Res. ${number}`,
-    hconres: `H.Con.Res. ${number}`,
-    sconres: `S.Con.Res. ${number}`,
+    hr: `H.R. ${number}`, s: `S. ${number}`,
+    hjres: `H.J.Res. ${number}`, sjres: `S.J.Res. ${number}`,
+    hres: `H.Res. ${number}`, sres: `S.Res. ${number}`,
+    hconres: `H.Con.Res. ${number}`, sconres: `S.Con.Res. ${number}`,
   };
-  const label = labelMap[typeRaw.toLowerCase()] ?? id;
-  return `${label} (${congress}th Congress)`;
+  return `${labelMap[typeRaw.toLowerCase()] ?? id} (${congress}th Congress)`;
 }
 
-/** Fetch full source details from the backend for a given sourceId */
 async function fetchSourceDetail(sourceId: string): Promise<SourceDetail | null> {
   try {
-    const res = await fetch(`${BASE_URL}/api/sources/${sourceId}`);
+    const res = await fetch(`${BASE_URL}/api/sources/${sourceId}`, {
+      headers: buildAuthHeaders(),
+      credentials: 'include',
+    });
     if (!res.ok) return null;
     return await res.json();
   } catch {
@@ -229,36 +221,24 @@ async function fetchSourceDetail(sourceId: string): Promise<SourceDetail | null>
   }
 }
 
-/** Build citations by fetching full source details from the backend */
 async function buildCitationsFromSourceIds(sourceIds: string[]): Promise<Citation[]> {
   const seen = new Set<string>();
   const citations: Citation[] = [];
-
   for (const id of sourceIds) {
     if (seen.has(id)) continue;
     seen.add(id);
-
     const detail = await fetchSourceDetail(id);
-
     const title = detail?.title || titleFromId(id);
     const excerpt = detail?.fullText ? cleanText(detail.fullText).slice(0, 220) : undefined;
-
     const url = resolveUrl(
-      id,
-      undefined,
-      detail?.billId,
-      detail?.billType,
-      detail?.billNumber,
-      detail?.billId?.match(/^(\d+)-/)?.[1],
+      id, undefined, detail?.billId, detail?.billType,
+      detail?.billNumber, detail?.billId?.match(/^(\d+)-/)?.[1],
     );
-
     citations.push({ id, title, url, excerpt });
   }
-
   return citations;
 }
 
-/** Build citations directly from embedded document objects */
 function buildCitationsFromDocs(docs: RetrievedDocument[]): Citation[] {
   const seen = new Set<string>();
   return docs
@@ -266,83 +246,50 @@ function buildCitationsFromDocs(docs: RetrievedDocument[]): Citation[] {
       const id = doc.id ?? doc._id ?? doc.doc_id ?? String(i + 1);
       if (seen.has(id)) return null;
       seen.add(id);
-
       const rawSource = doc.url ?? doc.source ?? doc.metadata?.url ?? doc.metadata?.source;
-
-      const title =
-        doc.title ??
-        doc.metadata?.title ??
-        titleFromId(id);
-
+      const title = doc.title ?? doc.metadata?.title ?? titleFromId(id);
       const url = resolveUrl(
-        id,
-        rawSource as string | undefined,
-        doc.bill_id,
-        doc.bill_type,
-        doc.bill_number,
-        doc.bill_id?.match(/^(\d+)-/)?.[1],
+        id, rawSource as string | undefined, doc.bill_id,
+        doc.bill_type, doc.bill_number, doc.bill_id?.match(/^(\d+)-/)?.[1],
       );
-
-      const rawExcerpt = doc.text ?? doc.content ?? doc.chunk_text ?? '';
-      const excerpt = cleanText(rawExcerpt).slice(0, 220) || undefined;
-
+      const excerpt = cleanText(doc.text ?? doc.content ?? doc.chunk_text ?? '').slice(0, 220) || undefined;
       return { id, title, url, excerpt } as Citation;
     })
     .filter((c): c is Citation => c !== null);
 }
 
-/** Extract the main answer text from the run result. */
 function extractAnswer(run: RunResult): string {
   if (run.answer) return cleanText(run.answer);
-
   let text = cleanText(run.agentCommentary?.content ?? '');
   text = text.replace(/^Graph Result:\s*/i, '').trim();
-
   const msgMatch = text.match(/'messages':\s*\[([^\]]+)\]/);
   if (msgMatch) {
     text = msgMatch[1].replace(/'/g, '').split(',').map((s) => s.trim()).filter(Boolean).join(' ');
   }
-
   if (text && text !== 'No result yet') return text;
   return cleanText(run.keyFinding?.summary ?? '');
 }
 
-/** Full parser: run result → {summary, bullets, citations} */
 async function parseResponse(run: RunResult): Promise<ParsedResponse> {
   const text = extractAnswer(run);
-
   if (!text) {
-    return {
-      summary: 'The analysis completed but did not produce a readable response.',
-      bullets: [],
-      citations: [],
-    };
+    return { summary: 'The analysis completed but did not produce a readable response.', bullets: [], citations: [] };
   }
-
-  const sentences = text
-    .split(/(?<=[.!?])\s+/)
-    .map((s) => s.trim())
-    .filter((s) => s.length > 0);
-
+  const sentences = text.split(/(?<=[.!?])\s+/).map((s) => s.trim()).filter((s) => s.length > 0);
   const summary = sentences[0] ?? text;
   const bullets = sentences.length > 1 ? sentences.slice(1) : [];
-
   let citations: Citation[] = [];
-
-  if (run.documents && run.documents.length > 0) {
-    citations = buildCitationsFromDocs(run.documents);
-  } else if (run.references?.sourceIds && run.references.sourceIds.length > 0) {
-    citations = await buildCitationsFromSourceIds(run.references.sourceIds);
-  }
-
+  if (run.documents && run.documents.length > 0) citations = buildCitationsFromDocs(run.documents);
+  else if (run.references?.sourceIds?.length) citations = await buildCitationsFromSourceIds(run.references.sourceIds);
   return { summary, bullets, citations };
 }
 
 async function createRun(query: string): Promise<string> {
   const res = await fetch(`${BASE_URL}/api/runs`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: buildAuthHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify({ query }),
+    credentials: 'include',
   });
   if (!res.ok) throw new Error(`Failed to start run (${res.status}): ${await res.text()}`);
   const data = await res.json();
@@ -352,7 +299,10 @@ async function createRun(query: string): Promise<string> {
 async function pollRun(runId: string): Promise<RunResult> {
   const deadline = Date.now() + POLL_TIMEOUT_MS;
   while (Date.now() < deadline) {
-    const res = await fetch(`${BASE_URL}/api/runs/${runId}`);
+    const res = await fetch(`${BASE_URL}/api/runs/${runId}`, {
+      headers: buildAuthHeaders(),
+      credentials: 'include',
+    });
     if (!res.ok) throw new Error(`Poll failed (${res.status})`);
     const data: RunResult = await res.json();
     if (data.status === 'completed') return data;
@@ -369,9 +319,297 @@ function guessRoute(query: string, run?: RunResult): 'nvidia' | 'huggingface' {
   return complex.some((k) => query.toLowerCase().includes(k)) ? 'nvidia' : 'huggingface';
 }
 
+// ─── useAgentStream ───────────────────────────────────────────────────────────
+
+interface AgentStreamState {
+  currentEvent: AgentEvent | null;
+  events: AgentEvent[];
+  isStreaming: boolean;
+  completedRunId: string | null;
+  streamError: string | null;
+}
+
+function useAgentStream() {
+  const [state, setState] = useState<AgentStreamState>({
+    currentEvent: null,
+    events: [],
+    isStreaming: false,
+    completedRunId: null,
+    streamError: null,
+  });
+
+  const esRef = useRef<EventSource | null>(null);
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const startStream = useCallback((query: string): Promise<{ runId: string; capturedEvents: AgentEvent[] }> => {
+    return new Promise((resolve, reject) => {
+      setState({ currentEvent: null, events: [], isStreaming: true, completedRunId: null, streamError: null });
+
+      const streamUrl = new URL(`${BASE_URL}/api/runs/stream`, window.location.origin);
+      streamUrl.searchParams.set('query', query);
+      const token = getAuthToken();
+      if (token) {
+        streamUrl.searchParams.set('token', token);
+      }
+      const es = new EventSource(streamUrl.toString(), { withCredentials: true });
+      esRef.current = es;
+      const localEvents: AgentEvent[] = [];
+
+      timeoutRef.current = setTimeout(() => {
+        es.close();
+        setState((prev) => ({ ...prev, isStreaming: false, streamError: 'timeout' }));
+        reject(new Error('Stream timed out'));
+      }, STREAM_TIMEOUT_MS);
+
+      es.onmessage = (e: MessageEvent) => {
+        try {
+          const event: AgentEvent = JSON.parse(e.data as string);
+          localEvents.push(event);
+          setState((prev) => ({ ...prev, currentEvent: event, events: [...prev.events, event] }));
+
+          if (event.event === 'complete' && event.runId) {
+            clearTimeout(timeoutRef.current!);
+            es.close();
+            setState((prev) => ({ ...prev, isStreaming: false, completedRunId: event.runId! }));
+            resolve({ runId: event.runId, capturedEvents: localEvents });
+          } else if (event.event === 'error') {
+            clearTimeout(timeoutRef.current!);
+            es.close();
+            setState((prev) => ({ ...prev, isStreaming: false, streamError: event.label }));
+            reject(new Error(event.label));
+          }
+        } catch {
+          // Ignore malformed SSE frames
+        }
+      };
+
+      es.onerror = () => {
+        clearTimeout(timeoutRef.current!);
+        es.close();
+        setState((prev) => ({ ...prev, isStreaming: false, streamError: 'connection' }));
+        reject(new Error('Stream connection failed'));
+      };
+    });
+  }, []);
+
+  const reset = useCallback(() => {
+    esRef.current?.close();
+    esRef.current = null;
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    setState({ currentEvent: null, events: [], isStreaming: false, completedRunId: null, streamError: null });
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      esRef.current?.close();
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    };
+  }, []);
+
+  return { ...state, startStream, reset };
+}
+
+// ─── useLiveTimer ─────────────────────────────────────────────────────────────
+
+function useLiveTimer(isActive: boolean): number {
+  const [elapsed, setElapsed] = useState(0);
+  const startRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (!isActive) { startRef.current = null; return; }
+    startRef.current = Date.now();
+    const id = setInterval(() => {
+      if (startRef.current !== null) setElapsed((Date.now() - startRef.current) / 1000);
+    }, 100);
+    return () => clearInterval(id);
+  }, [isActive]);
+
+  return elapsed;
+}
+
+// ─── Stage metadata ───────────────────────────────────────────────────────────
+
+const STAGE_THOUGHTS: Record<AgentEventType, string[]> = {
+  init:       ['Initialising legal intelligence engine...', 'Loading legislative knowledge base...'],
+  thinking:   ['Parsing query intent and jurisdiction...', 'Identifying key legal concepts...', 'Mapping statutory relationships...', 'Classifying legal domain and scope...'],
+  searching:  ['Running semantic vector search...', 'Querying indexed legislative corpus...', 'Applying jurisdiction and relevance filters...', 'Scoring document similarity...'],
+  reading:    ['Extracting key statutory clauses...', 'Analysing legislative language...', 'Cross-referencing bill amendments...', 'Evaluating source credibility...'],
+  generating: ['Synthesising retrieved evidence...', 'Formulating legal analysis...', 'Structuring compliance framework...', 'Validating against regulatory standards...'],
+  complete:   ['Analysis complete.'],
+  error:      ['Analysis failed.'],
+};
+
+const STAGE_META: Partial<Record<AgentEventType, { Icon: React.ElementType }>> = {
+  init:       { Icon: Cpu },
+  thinking:   { Icon: Brain },
+  searching:  { Icon: Search },
+  reading:    { Icon: BookOpen },
+  generating: { Icon: Sparkles },
+  complete:   { Icon: CheckCircle2 },
+  error:      { Icon: AlertCircle },
+};
+
+const STEP_ACCENT: Partial<Record<AgentEventType, string>> = {
+  thinking:   'var(--accent-blue)',
+  searching:  'var(--accent-purple)',
+  reading:    '#f59e0b',
+  generating: 'var(--accent-green)',
+};
+
+// ─── CompletedThoughtCard ─────────────────────────────────────────────────────
+
+const CompletedThoughtCard: React.FC<{
+  event: AgentEvent;
+  nextElapsed?: number;
+  isLast?: boolean;
+}> = ({ event, nextElapsed, isLast }) => {
+  const Icon = STAGE_META[event.event]?.Icon ?? Cpu;
+  const color = STEP_ACCENT[event.event] ?? 'var(--accent-green)';
+  const thought = (STAGE_THOUGHTS[event.event] ?? [])[0] ?? '';
+  const stageDuration = nextElapsed !== undefined ? nextElapsed - event.elapsed : event.elapsed;
+
+  return (
+    <div className="tc-wrapper">
+      <div className="tc-card" style={{ borderLeftColor: color }}>
+        <div className="tc-header">
+          <div className="tc-step-name">
+            <Icon size={10} strokeWidth={2.5} style={{ color }} />
+            <span style={{ color }}>{event.event.toUpperCase()}</span>
+          </div>
+          <span className="tc-time">{stageDuration.toFixed(2)}s</span>
+        </div>
+        <p className="tc-desc">{event.label}</p>
+        {thought && (
+          <div className="tc-logic">
+            <span className="tc-logic-label">AGENT LOGIC</span>
+            <p className="tc-logic-text">"{thought}"</p>
+          </div>
+        )}
+        <div className="tc-metrics">
+          <div className="tc-metric">
+            <span className="tc-metric-label">ELAPSED</span>
+            <span className="tc-metric-val">{stageDuration.toFixed(2)}s</span>
+          </div>
+          {event.docCount != null && (
+            <div className="tc-metric">
+              <span className="tc-metric-label">SOURCES</span>
+              <span className="tc-metric-val">{event.docCount}</span>
+            </div>
+          )}
+          <div className="tc-metric">
+            <span className="tc-metric-label">STATUS</span>
+            <span className="tc-metric-val tc-metric-val--done">PROCESSED</span>
+          </div>
+        </div>
+      </div>
+      {!isLast && <div className="tc-connector" />}
+    </div>
+  );
+};
+
+// ─── AgentThinkingBlock ───────────────────────────────────────────────────────
+
+const AgentThinkingBlock: React.FC<{
+  currentEvent: AgentEvent | null;
+  isStreaming: boolean;
+}> = ({ currentEvent, isStreaming }) => {
+  const [thoughtIdx, setThoughtIdx] = useState(0);
+  const [thoughtKey, setThoughtKey] = useState(0);
+  const liveElapsed = useLiveTimer(isStreaming);
+
+  const effectiveEvent: AgentEvent = currentEvent ?? (
+    isStreaming
+      ? { event: 'thinking', label: 'Thinking...', elapsed: 0 }
+      : { event: 'init',     label: 'Initialising...', elapsed: 0 }
+  );
+
+  useEffect(() => {
+    const eventType = effectiveEvent.event;
+    if (eventType === 'complete' || eventType === 'error') return;
+    setTimeout(() => { setThoughtIdx(0); setThoughtKey((k) => k + 1); }, 0);
+    const thoughts = STAGE_THOUGHTS[eventType] ?? [];
+    if (thoughts.length <= 1) return;
+    const id = setInterval(() => {
+      setThoughtIdx((i) => { setThoughtKey((k) => k + 1); return (i + 1) % thoughts.length; });
+    }, 2500);
+    return () => clearInterval(id);
+  }, [effectiveEvent.event]);
+
+  if (!isStreaming && !currentEvent) return null;
+
+  const isComplete = effectiveEvent.event === 'complete';
+  const isError    = effectiveEvent.event === 'error';
+  const color      = STEP_ACCENT[effectiveEvent.event] ?? 'var(--accent-blue)';
+  const currentThought = (STAGE_THOUGHTS[effectiveEvent.event] ?? [])[thoughtIdx] ?? '';
+  const displayElapsed = isComplete ? (effectiveEvent.elapsed ?? 0) : liveElapsed;
+
+  return (
+    <div
+      className={`tc-card tc-card--active${isComplete ? ' tc-card--done' : isError ? ' tc-card--error' : ''}`}
+      style={{ borderLeftColor: isComplete ? 'var(--accent-green)' : isError ? '#ef4444' : color }}
+      role="status"
+      aria-live="polite"
+      aria-label={effectiveEvent.label}
+    >
+      <div className="tc-header">
+        <div className="tc-step-name">
+          {isComplete ? (
+            <CheckCircle2 size={10} strokeWidth={2.5} style={{ color: 'var(--accent-green)' }} />
+          ) : isError ? (
+            <AlertCircle size={10} strokeWidth={2.5} style={{ color: '#ef4444' }} />
+          ) : (
+            <span className="tc-spinner" style={{ borderTopColor: color }} />
+          )}
+          <span style={{ color: isComplete ? 'var(--accent-green)' : isError ? '#ef4444' : color }}>
+            {isComplete ? 'COMPLETE' : isError ? 'ERROR' : effectiveEvent.event.toUpperCase()}
+          </span>
+          {!isComplete && !isError && (
+            <div className="tc-neural-bars" aria-hidden="true">
+              {[0, 1, 2, 3, 4].map((i) => (
+                <span key={i} className="tc-neural-bar" style={{ animationDelay: `${i * 0.13}s`, background: color }} />
+              ))}
+            </div>
+          )}
+        </div>
+        <span className="tc-time">{displayElapsed.toFixed(2)}s</span>
+      </div>
+
+      <p className="tc-desc">{isComplete ? 'Analysis complete' : effectiveEvent.label}</p>
+
+      {!isComplete && !isError && (
+        <>
+          <div className="tc-logic">
+            <span className="tc-logic-label">AGENT LOGIC</span>
+            <p key={thoughtKey} className="tc-logic-text tc-logic-text--animated">"{currentThought}"</p>
+          </div>
+          <div className="tc-metrics">
+            <div className="tc-metric">
+              <span className="tc-metric-label">ELAPSED</span>
+              <span className="tc-metric-val">{displayElapsed.toFixed(2)}s</span>
+            </div>
+            {effectiveEvent.docCount != null && (
+              <div className="tc-metric">
+                <span className="tc-metric-label">SOURCES</span>
+                <span className="tc-metric-val">{effectiveEvent.docCount}</span>
+              </div>
+            )}
+            <div className="tc-metric">
+              <span className="tc-metric-label">STATUS</span>
+              <span className="tc-metric-val tc-metric-val--active">VALIDATING</span>
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+};
+
 // ─── FormattedResponse ────────────────────────────────────────────────────────
 
-const FormattedResponse: React.FC<{ parsed: ParsedResponse }> = ({ parsed }) => {
+const FormattedResponse: React.FC<{
+  parsed: ParsedResponse;
+  onCitationClick: (c: Citation) => void;
+}> = ({ parsed, onCitationClick }) => {
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
   return (
@@ -386,7 +624,10 @@ const FormattedResponse: React.FC<{ parsed: ParsedResponse }> = ({ parsed }) => 
 
       {parsed.citations.length > 0 && (
         <div className="response-citations">
-          <p className="citations-label">📎 Sources</p>
+          <p className="citations-label">
+            <Paperclip size={11} strokeWidth={2} style={{ display: 'inline', marginRight: '5px', verticalAlign: 'middle' }} />
+            Sources
+          </p>
           <div className="citations-list">
             {parsed.citations.map((c) => (
               <div key={c.id} className="citation-item">
@@ -400,10 +641,10 @@ const FormattedResponse: React.FC<{ parsed: ParsedResponse }> = ({ parsed }) => 
                       {expandedId === c.id ? '▼' : '▶'}
                     </button>
                   )}
-
                   <span className="citation-id">[{c.id}]</span>
-                  <span className="citation-title">{c.title}</span>
-
+                  <button className="citation-title-btn" onClick={() => onCitationClick(c)}>
+                    {c.title}
+                  </button>
                   {c.url ? (
                     <a
                       href={c.url}
@@ -418,7 +659,6 @@ const FormattedResponse: React.FC<{ parsed: ParsedResponse }> = ({ parsed }) => 
                     <span className="citation-no-link">No link</span>
                   )}
                 </div>
-
                 {expandedId === c.id && c.excerpt && (
                   <p className="citation-excerpt">"{c.excerpt}…"</p>
                 )}
@@ -431,7 +671,7 @@ const FormattedResponse: React.FC<{ parsed: ParsedResponse }> = ({ parsed }) => 
   );
 };
 
-// ─── Research Tasks (Empty State) ────────────────────────────────────────────
+// ─── Research Tasks (Empty State) ─────────────────────────────────────────────
 
 interface ResearchTask {
   icon: 'regulatory' | 'compliance' | 'research' | 'contract';
@@ -506,85 +746,133 @@ interface ReasoningStep {
   label: string;
   description: string;
   status: 'done' | 'active' | 'pending';
-  time?: string;
+  elapsed?: number;
   tags?: string[];
-  resultCount?: string;
   progress?: number;
+  Icon: React.ElementType;
 }
 
-const ReasoningPanel: React.FC<{ routedTo?: string; isTyping?: boolean }> = ({ routedTo, isTyping }) => {
+const ReasoningPanel: React.FC<{
+  routedTo?: string;
+  isTyping?: boolean;
+  currentEvent?: AgentEvent | null;
+  events?: AgentEvent[];
+  carbonG?: number;
+  // Polling-path fallback metrics
+  sessionMetrics?: { totalCarbonG: number; totalTokens: number; queryCount: number };
+  lastMetrics?: GreenMetrics;
+}> = ({ routedTo, isTyping, currentEvent, events = [], carbonG, sessionMetrics, lastMetrics }) => {
+  const liveElapsed = useLiveTimer(!!isTyping);
+
+  const ORDER: AgentEventType[] = ['init', 'thinking', 'searching', 'reading', 'generating', 'complete'];
+  const activeEvent = currentEvent?.event;
+  const activeIdx   = activeEvent ? ORDER.indexOf(activeEvent) : (isTyping ? 0 : ORDER.length);
+
+  const stepStatus = (reachedAt: AgentEventType): ReasoningStep['status'] => {
+    if (!isTyping) return 'done';
+    const stepIdx = ORDER.indexOf(reachedAt);
+    if (activeIdx > stepIdx)   return 'done';
+    if (activeIdx === stepIdx) return 'active';
+    return 'pending';
+  };
+
+  const getElapsed = (e: AgentEventType) => events.find((ev) => ev.event === e)?.elapsed;
+
+  const docCount     = currentEvent?.docCount ?? events.find((e) => e.event === 'reading')?.docCount;
+  const tokenCount   = events.find((e) => e.event === 'complete')?.tokenCount ?? currentEvent?.tokenCount;
+  const totalElapsed = events.find((e) => e.event === 'complete')?.elapsed ?? currentEvent?.elapsed;
+
+  const hasStreamData = events.length > 0;
+  const realCarbonG   = carbonG ?? events.find((e) => e.event === 'complete')?.carbonG;
+  const co2g = realCarbonG
+    ?? (hasStreamData ? (tokenCount ? tokenCount * 0.0003 : 0.3) : (lastMetrics?.carbonG ?? 0));
+  const co2Display = co2g < 0.001
+    ? `${(co2g * 1_000_000).toFixed(2)} μg`
+    : co2g < 1
+      ? `${(co2g * 1000).toFixed(2)} mg`
+      : `${co2g.toFixed(3)} g`;
+
   const steps: ReasoningStep[] = [
     {
       label: 'Semantic Search',
-      description: 'Indexed legislative documents for relevant provisions.',
-      status: isTyping ? 'active' : 'done',
-      time: nowStr(),
-      tags: ['VectorDB', 'Hybrid Search'],
+      description: 'Queried legislative index using vector similarity.',
+      status: stepStatus('searching'),
+      elapsed: getElapsed('searching'),
+      tags: ['Vector DB', 'Hybrid Search'],
+      Icon: Search,
     },
     {
-      label: 'Jurisdiction Filtering',
-      description: 'Applied multi-layer filter for applicable jurisdiction.',
-      status: isTyping ? 'pending' : 'done',
-      time: nowStr(),
-      resultCount: '12 RESULTS',
+      label: 'Document Retrieval',
+      description: docCount != null
+        ? `${docCount} source${docCount !== 1 ? 's' : ''} selected for analysis.`
+        : 'Applied jurisdiction and relevance filters.',
+      status: stepStatus('reading'),
+      elapsed: getElapsed('reading'),
+      Icon: BookOpen,
     },
     {
-      label: 'Cross-Reference Mapping',
-      description: 'Analyzing dependency graphs between sections.',
-      status: isTyping ? 'pending' : 'done',
-      time: nowStr(),
-      progress: isTyping ? 65 : 100,
+      label: 'Answer Synthesis',
+      description: stepStatus('generating') === 'active'
+        ? 'Synthesising context with the language model…'
+        : 'Generated response from retrieved context.',
+      status: stepStatus('generating'),
+      elapsed: getElapsed('generating'),
+      progress: stepStatus('generating') === 'active' ? 60 : undefined,
+      Icon: Sparkles,
     },
     {
-      label: 'Conclusion Synthesis',
-      description: isTyping ? 'Waiting for graph completion.' : 'Final analysis generated.',
+      label: 'Final Output',
+      description: !isTyping ? 'Analysis complete.' : 'Awaiting completion.',
       status: isTyping ? 'pending' : 'done',
+      elapsed: getElapsed('complete'),
+      Icon: CheckCircle2,
     },
   ];
 
   return (
     <div className="reasoning-panel">
+
+      {/* ── Header ── */}
       <div className="rpanel-header">
         <span className="rpanel-title">AI Reasoning Path</span>
-        <span className="rpanel-badge">{routedTo === 'nvidia' ? 'NVIDIA NIM' : 'LANGGRAPH V2'}</span>
+        {routedTo && (
+          <span className="rpanel-provider-tag">
+            {routedTo === 'nvidia' ? 'NVIDIA NIM' : 'RAG Pipeline'}
+          </span>
+        )}
       </div>
 
+      {/* ── Steps ── */}
       <div className="rpanel-steps">
         {steps.map((step, i) => (
           <div key={i} className={`rpanel-step status-${step.status}`}>
             <div className="rpanel-step-dot">
-              {step.status === 'done' ? (
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-                  <circle cx="12" cy="12" r="12" fill="#10b981" />
-                  <path d="M7 13l3 3 7-7" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
-              ) : step.status === 'active' ? (
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-                  <circle cx="12" cy="12" r="12" fill="#2563eb" />
-                  <circle cx="12" cy="12" r="4" fill="white" />
-                </svg>
-              ) : (
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-                  <circle cx="12" cy="12" r="11" stroke="#d1d5db" strokeWidth="2" />
-                  <circle cx="12" cy="12" r="4" fill="#d1d5db" />
-                </svg>
+              <div className={`rpanel-step-num rpanel-step-num--${step.status}`}>
+                {step.status === 'done'
+                  ? <CheckCircle2 size={10} strokeWidth={2.5} />
+                  : step.status === 'active'
+                    ? <span className="rpanel-step-spinner" />
+                    : <span>{i + 1}</span>}
+              </div>
+              {i < steps.length - 1 && (
+                <div className={`rpanel-line${step.status === 'done' ? ' done' : ''}`} />
               )}
-              {i < steps.length - 1 && <div className={`rpanel-line ${step.status === 'done' ? 'done' : ''}`} />}
             </div>
             <div className="rpanel-step-body">
               <div className="rpanel-step-header">
                 <span className="rpanel-step-label">{step.label}</span>
-                {step.status === 'active' && <span className="rpanel-processing-badge">Processing</span>}
-                {step.time && step.status === 'done' && <span className="rpanel-step-time">{step.time}</span>}
+                {step.status === 'active' && (
+                  <span className="rpanel-step-live">{liveElapsed.toFixed(1)}s</span>
+                )}
+                {step.elapsed !== undefined && step.status !== 'active' && (
+                  <span className="rpanel-step-time">{step.elapsed.toFixed(1)}s</span>
+                )}
               </div>
               <p className="rpanel-step-desc">{step.description}</p>
-              {step.tags && (
+              {step.tags && step.status !== 'pending' && (
                 <div className="rpanel-tags">
                   {step.tags.map((t) => <span key={t} className="rpanel-tag">{t}</span>)}
                 </div>
-              )}
-              {step.resultCount && step.status === 'done' && (
-                <span className="rpanel-result-count">{step.resultCount}</span>
               )}
               {step.progress !== undefined && step.status === 'active' && (
                 <div className="rpanel-progress-wrap">
@@ -599,25 +887,92 @@ const ReasoningPanel: React.FC<{ routedTo?: string; isTyping?: boolean }> = ({ r
         ))}
       </div>
 
-      <div className="trust-score-card">
-        <div className="trust-score-header">
-          <span className="trust-label">TRUST SCORE</span>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-            <circle cx="12" cy="12" r="10" fill="#10b981" />
-            <path d="M9 12l2 2 4-4" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
+      {/* ── Green Metrics — last query (polling fallback) ── */}
+      {!hasStreamData && lastMetrics && (lastMetrics.carbonG > 0 || lastMetrics.tokensUsed > 0) && (
+        <div className="rpanel-stats">
+          <div className="rpanel-stats-section-label">LAST QUERY</div>
+          <div className="rpanel-stat-row">
+            <span>CO₂ Footprint</span>
+            <strong className="rpanel-green-value">{lastMetrics.carbonG.toFixed(4)}g</strong>
+          </div>
+          <div className="rpanel-stat-row">
+            <span>Tokens Used</span>
+            <strong>{lastMetrics.tokensUsed.toLocaleString()}</strong>
+          </div>
+          <div className="rpanel-stat-row">
+            <span>Latency</span>
+            <strong>{(lastMetrics.latencyMs / 1000).toFixed(1)}s</strong>
+          </div>
+          {sessionMetrics && sessionMetrics.queryCount > 0 && (
+            <>
+              <div className="rpanel-stats-divider" />
+              <div className="rpanel-stats-section-label">THIS SESSION</div>
+              <div className="rpanel-stat-row">
+                <span>Total CO₂</span>
+                <strong className="rpanel-green-value">{sessionMetrics.totalCarbonG.toFixed(4)}g</strong>
+              </div>
+              <div className="rpanel-stat-row">
+                <span>Total Tokens</span>
+                <strong>{sessionMetrics.totalTokens.toLocaleString()}</strong>
+              </div>
+              <div className="rpanel-stat-row">
+                <span>Queries Run</span>
+                <strong>{sessionMetrics.queryCount}</strong>
+              </div>
+              <div className="rpanel-carbon-context">
+                <span className="rpanel-carbon-leaf">🌿</span>
+                <span>
+                  {sessionMetrics.totalCarbonG < 1
+                    ? `${sessionMetrics.totalCarbonG.toFixed(4)}g CO₂ — less than driving 1 metre`
+                    : `${sessionMetrics.totalCarbonG.toFixed(2)}g CO₂ this session`}
+                </span>
+              </div>
+            </>
+          )}
         </div>
-        <div className="trust-score-value">
-          <span className="trust-number">98.4</span>
-          <span className="trust-confidence">High Confidence</span>
+      )}
+
+      {/* ── Impact Report (SSE path) ── */}
+      <div className="impact-report">
+        <div className="ir-header">
+          <div className="ir-header-left">
+            <Leaf size={13} strokeWidth={2} />
+            <span className="ir-title">Impact Report</span>
+          </div>
+          <span className="ir-badge">LOW CARBON</span>
         </div>
-        <p className="trust-desc">Verified against official legal statute datasets.</p>
+
+        <div className="ir-co2-block">
+          <span className="ir-co2-value">{co2Display}</span>
+          <div className="ir-co2-right">
+            <span className="ir-co2-label">TOTAL CO₂ EQUIVALENT</span>
+            <span className="ir-vs-avg">-42% VS INDUSTRY AVG</span>
+          </div>
+        </div>
+
+        <div className="ir-range">
+          <div className="ir-range-track">
+            <div className="ir-range-fill" />
+            <div className="ir-range-marker" />
+          </div>
+          <div className="ir-range-ends">
+            <span>0.00g</span>
+            <span>{tokenCount != null && tokenCount > 0 ? `${(tokenCount * 0.0003).toFixed(3)}g` : '1.89g'}</span>
+          </div>
+        </div>
+
+        <div className="ir-stats">
+          <div className="ir-stat">
+            <span className="ir-stat-label">SOURCES</span>
+            <span className="ir-stat-val">{docCount ?? '—'}</span>
+          </div>
+          <div className="ir-stat">
+            <span className="ir-stat-label">TIME</span>
+            <span className="ir-stat-val">{totalElapsed != null ? `${totalElapsed.toFixed(1)}s` : '—'}</span>
+          </div>
+        </div>
       </div>
 
-      <div className="rpanel-stats">
-        <div className="rpanel-stat-row"><span>Sources Analyzed</span><strong>12</strong></div>
-        <div className="rpanel-stat-row"><span>Carbon Footprint</span><strong>0.3g CO₂</strong></div>
-      </div>
     </div>
   );
 };
@@ -638,14 +993,49 @@ const AIagentPage: React.FC<{ darkMode?: boolean; toggleDarkMode?: () => void }>
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
 
+  // SSE streaming state
+  const { currentEvent, events, isStreaming, startStream, reset: resetStream } = useAgentStream();
+
+  // Right panel collapse
+  const [rightPanelOpen, setRightPanelOpen] = useState(true);
+
+  // Document preview state
+  const [previewCitation, setPreviewCitation] = useState<Citation | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+
+  // Session-level green metrics (polling fallback only)
+  const [sessionMetrics, setSessionMetrics] = useState({
+    totalCarbonG: 0,
+    totalTokens: 0,
+    queryCount: 0,
+  });
+
+  // Persist last SSE complete event so panel stays populated after stream resets
+  const [lastCompleteEvent, setLastCompleteEvent] = useState<AgentEvent | null>(null);
+  useEffect(() => {
+    const ce = events.find((e) => e.event === 'complete');
+    if (ce) setLastCompleteEvent(ce);
+  }, [events]);
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, isTyping]);
+  }, [messages, isTyping, isStreaming, events]);
 
   useEffect(() => { inputRef.current?.focus(); }, []);
+
+  // Citation click → fetch full text, open doc preview panel
+  const handleCitationClick = useCallback(async (c: Citation) => {
+    setPreviewCitation(c);
+    setPreviewLoading(true);
+    const detail = await fetchSourceDetail(c.id);
+    if (detail?.fullText) {
+      setPreviewCitation({ ...c, excerpt: cleanText(detail.fullText).slice(0, 6000) });
+    }
+    setPreviewLoading(false);
+  }, []);
 
   const handleSend = useCallback(async (text?: string): Promise<void> => {
     const messageText = (text ?? input).trim();
@@ -657,12 +1047,44 @@ const AIagentPage: React.FC<{ darkMode?: boolean; toggleDarkMode?: () => void }>
     ]);
     setInput('');
     setIsTyping(true);
+    resetStream();
 
     try {
-      const runId = await createRun(messageText);
+      let runId: string;
+      let capturedStreamEvents: AgentEvent[] = [];
+
+      try {
+        // Primary path: SSE streaming for real-time thought visualisation
+        const result = await startStream(messageText);
+        runId = result.runId;
+        capturedStreamEvents = result.capturedEvents.filter(
+          (e) => !['init', 'error'].includes(e.event)
+        );
+      } catch {
+        // Graceful fallback to standard polling if streaming is unavailable
+        resetStream();
+        runId = await createRun(messageText);
+      }
+
       const run = await pollRun(runId);
       const parsed = await parseResponse(run);
       const routedTo = guessRoute(messageText, run);
+
+      // Extract green metrics from backend reasoningPath (polling fallback)
+      const metrics: GreenMetrics = {
+        carbonG: run.reasoningPath?.carbonTotalG ?? 0,
+        tokensUsed: run.reasoningPath?.tokensUsed ?? 0,
+        latencyMs: run.reasoningPath?.latencyMs ?? 0,
+      };
+
+      // Only accumulate session totals when SSE wasn't available
+      if (capturedStreamEvents.length === 0) {
+        setSessionMetrics((prev) => ({
+          totalCarbonG: prev.totalCarbonG + metrics.carbonG,
+          totalTokens: prev.totalTokens + metrics.tokensUsed,
+          queryCount: prev.queryCount + 1,
+        }));
+      }
 
       setMessages((prev) => [
         ...prev,
@@ -674,6 +1096,8 @@ const AIagentPage: React.FC<{ darkMode?: boolean; toggleDarkMode?: () => void }>
           time: nowStr(),
           runId,
           routedTo,
+          metrics,
+          streamEvents: capturedStreamEvents.length > 0 ? capturedStreamEvents : undefined,
         },
       ]);
     } catch (err: unknown) {
@@ -684,8 +1108,9 @@ const AIagentPage: React.FC<{ darkMode?: boolean; toggleDarkMode?: () => void }>
       ]);
     } finally {
       setIsTyping(false);
+      resetStream();
     }
-  }, [input, isTyping]);
+  }, [input, isTyping, startStream, resetStream]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>): void => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -778,32 +1203,32 @@ const AIagentPage: React.FC<{ darkMode?: boolean; toggleDarkMode?: () => void }>
             New Research Case
           </button>
           {toggleDarkMode && (
-  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 4px' }}>
-    <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-      {darkMode ? 'Dark Mode' : 'Light Mode'}
-    </span>
-    <button
-      onClick={toggleDarkMode}
-      style={{
-        width: '44px', height: '24px', borderRadius: '999px',
-        border: 'none', cursor: 'pointer', padding: 0,
-        background: darkMode ? '#3b82f6' : '#e2e8f0',
-        transition: 'background 0.3s ease',
-        display: 'flex', alignItems: 'center',
-      }}
-    >
-      <span className="toggle-thumb" style={{
-  width: '18px', height: '18px', borderRadius: '50%',
-  background: 'white', display: 'flex', alignItems: 'center',
-  justifyContent: 'center', overflow: 'hidden',
-  transform: darkMode ? 'translateX(22px)' : 'translateX(3px)',
-  boxShadow: '0 1px 4px rgba(0,0,0,0.2)',
-}}>
-  <img src={darkMode ? moonIcon : sunIcon} width="12" height="12" style={{ objectFit: 'contain' }} />
-</span>
-    </button>
-  </div>
-  )}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 4px' }}>
+              <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                {darkMode ? 'Dark Mode' : 'Light Mode'}
+              </span>
+              <button
+                onClick={toggleDarkMode}
+                style={{
+                  width: '44px', height: '24px', borderRadius: '999px',
+                  border: 'none', cursor: 'pointer', padding: 0,
+                  background: darkMode ? '#3b82f6' : '#e2e8f0',
+                  transition: 'background 0.3s ease',
+                  display: 'flex', alignItems: 'center',
+                }}
+              >
+                <span className="toggle-thumb" style={{
+                  width: '18px', height: '18px', borderRadius: '50%',
+                  background: 'white', display: 'flex', alignItems: 'center',
+                  justifyContent: 'center', overflow: 'hidden',
+                  transform: darkMode ? 'translateX(22px)' : 'translateX(3px)',
+                  boxShadow: '0 1px 4px rgba(0,0,0,0.2)',
+                }}>
+                  <img src={darkMode ? moonIcon : sunIcon} width="12" height="12" style={{ objectFit: 'contain' }} />
+                </span>
+              </button>
+            </div>
+          )}
           <div className="sidebar-user">
             <div className="sidebar-user-avatar">
               <img src="https://ui-avatars.com/api/?name=James+Sterling&background=e2e8f0&color=475569&size=36&font-size=0.4&bold=true" alt="JS" />
@@ -832,10 +1257,20 @@ const AIagentPage: React.FC<{ darkMode?: boolean; toggleDarkMode?: () => void }>
               </div>
               <div className="header-badge">
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+                  <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
                 </svg>
-                <span>Trust Score 98%</span>
+                <span>RAG Pipeline Active</span>
               </div>
+              {/* Session CO₂ badge — only shown when polling fallback was used */}
+              {sessionMetrics.queryCount > 0 && (
+                <div className="header-badge header-badge-green">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="2.5">
+                    <path d="M12 2C6 2 2 8 2 12c0 5.5 4.5 10 10 10s10-4.5 10-10c0-1-.2-2-.5-3" />
+                    <path d="M12 6v6l4 2" stroke="#10b981" strokeWidth="2" strokeLinecap="round" />
+                  </svg>
+                  <span>🌿 {sessionMetrics.totalCarbonG.toFixed(4)}g CO₂ session</span>
+                </div>
+              )}
               <div className="header-badge">
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="2.5">
                   <circle cx="12" cy="12" r="10" /><path d="M9 12l2 2 4-4" />
@@ -874,23 +1309,56 @@ const AIagentPage: React.FC<{ darkMode?: boolean; toggleDarkMode?: () => void }>
                       )}
 
                       <div className="message-content">
+                        {/* Replay completed thought cards above the message bubble */}
+                        {msg.type === 'assistant' && msg.streamEvents && msg.streamEvents.length > 0 && (() => {
+                          const stageEvents = msg.streamEvents.filter(e => e.event !== 'complete');
+                          const completeEvt = msg.streamEvents.find(e => e.event === 'complete');
+                          return (
+                            <div className="thought-stream thought-stream--history">
+                              {stageEvents.map((evt, i) => {
+                                const nextEvt = stageEvents[i + 1] ?? completeEvt;
+                                return (
+                                  <CompletedThoughtCard
+                                    key={`${msg.id}-${evt.event}`}
+                                    event={evt}
+                                    nextElapsed={nextEvt?.elapsed}
+                                    isLast={i === stageEvents.length - 1}
+                                  />
+                                );
+                              })}
+                            </div>
+                          );
+                        })()}
+
                         <div className={`message-bubble ${msg.type}`}>
                           {msg.type === 'assistant' && msg.parsed
-                            ? <FormattedResponse parsed={msg.parsed} />
+                            ? <FormattedResponse parsed={msg.parsed} onCitationClick={handleCitationClick} />
                             : msg.text}
                         </div>
+
                         <div className="message-meta">
                           <span className="message-time">
                             {msg.type === 'assistant' ? 'AI Assistant' : 'Legal Counsel'} · {msg.time}
                           </span>
                           {msg.routedTo && (
                             <span className={`route-badge route-${msg.routedTo}`}>
-                              {msg.routedTo === 'nvidia' ? '⚡ Nvidia' : '🤗 HuggingFace'}
+                              {msg.routedTo === 'nvidia' ? 'Nvidia NIM' : 'HuggingFace'}
                             </span>
                           )}
                           {msg.runId && (
                             <span className="run-id-badge" title="Orchestrator run ID">
                               {msg.runId.slice(0, 18)}…
+                            </span>
+                          )}
+                          {/* Per-query carbon badge — only when polling fallback was used */}
+                          {!msg.streamEvents && msg.metrics && (msg.metrics.carbonG > 0 || msg.metrics.tokensUsed > 0) && (
+                            <span className="green-metrics-badge" title="Green computing metrics for this query">
+                              🌿 {msg.metrics.carbonG.toFixed(4)}g CO₂
+                              &nbsp;·&nbsp;
+                              🔢 {msg.metrics.tokensUsed.toLocaleString()} tok
+                              {msg.metrics.latencyMs > 0 && (
+                                <>&nbsp;·&nbsp;⏱ {(msg.metrics.latencyMs / 1000).toFixed(1)}s</>
+                              )}
                             </span>
                           )}
                         </div>
@@ -902,21 +1370,44 @@ const AIagentPage: React.FC<{ darkMode?: boolean; toggleDarkMode?: () => void }>
                     </div>
                   ))}
 
+                  {/* Live thought stream during active query */}
                   {isTyping && (
-                    <div className="message-row assistant">
-                      <div className="msg-avatar assistant-avatar">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                          <circle cx="12" cy="8" r="4" />
-                          <path d="M6 20v-2a6 6 0 0 1 12 0v2" />
-                        </svg>
+                    <div className="thought-stream">
+                      <div className="thought-stream-header">
+                        <span className="ts-status-pill ts-status-pill--done">● Processed</span>
+                        <span className="ts-status-pill ts-status-pill--active">● Validating</span>
+                        <span className="ts-status-pill ts-status-pill--pending">● Pending</span>
                       </div>
-                      <div className="message-content">
-                        <div className="message-bubble assistant typing-bubble">
-                          <span className="typing-dot" />
-                          <span className="typing-dot" />
-                          <span className="typing-dot" />
+                      {(() => {
+                        const visibleEvents = events.filter(
+                          e => !['init', 'complete', 'error'].includes(e.event) && e.event !== currentEvent?.event
+                        );
+                        return visibleEvents.map((evt, i) => {
+                          const nextEvt = visibleEvents[i + 1] ?? currentEvent ?? events.find(e => e.event === 'complete');
+                          return (
+                            <CompletedThoughtCard
+                              key={evt.event}
+                              event={evt}
+                              nextElapsed={nextEvt?.elapsed}
+                              isLast={i === visibleEvents.length - 1 && !isStreaming && !currentEvent}
+                            />
+                          );
+                        });
+                      })()}
+                      {isStreaming || currentEvent ? (
+                        <AgentThinkingBlock
+                          currentEvent={currentEvent}
+                          isStreaming={isStreaming}
+                        />
+                      ) : (
+                        <div className="message-bubble assistant">
+                          <div className="typing-bubble">
+                            <span className="typing-dot" />
+                            <span className="typing-dot" />
+                            <span className="typing-dot" />
+                          </div>
                         </div>
-                      </div>
+                      )}
                     </div>
                   )}
 
@@ -958,6 +1449,12 @@ const AIagentPage: React.FC<{ darkMode?: boolean; toggleDarkMode?: () => void }>
                   </div>
                   <div className="input-bottom-row">
                     <div className="input-tools">
+                      <div className="model-indicator">
+                        <svg width="7" height="7" viewBox="0 0 24 24" fill="none">
+                          <circle cx="12" cy="12" r="10" fill="#10b981" />
+                        </svg>
+                        GPT-4 LEGAL MODEL ACTIVE
+                      </div>
                       <button className="input-tool-btn" title="Attach file" aria-label="Attach file">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                           <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
@@ -973,12 +1470,6 @@ const AIagentPage: React.FC<{ darkMode?: boolean; toggleDarkMode?: () => void }>
                           <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" /><path d="M19 10v2a7 7 0 0 1-14 0v-2" /><line x1="12" y1="19" x2="12" y2="23" /><line x1="8" y1="23" x2="16" y2="23" />
                         </svg>
                       </button>
-                      <div className="model-indicator">
-                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none">
-                          <circle cx="12" cy="12" r="10" fill="#10b981" />
-                        </svg>
-                        GPT-4 LEGAL MODEL ACTIVE
-                      </div>
                     </div>
                   </div>
                   <p className="input-disclaimer">
@@ -1050,6 +1541,12 @@ const AIagentPage: React.FC<{ darkMode?: boolean; toggleDarkMode?: () => void }>
                 </div>
                 <div className="input-bottom-row">
                   <div className="input-tools">
+                    <div className="model-indicator">
+                      <svg width="7" height="7" viewBox="0 0 24 24" fill="none">
+                        <circle cx="12" cy="12" r="10" fill="#10b981" />
+                      </svg>
+                      GPT-4 LEGAL MODEL ACTIVE
+                    </div>
                     <button className="input-tool-btn" title="Attach file" aria-label="Attach file">
                       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                         <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
@@ -1065,12 +1562,6 @@ const AIagentPage: React.FC<{ darkMode?: boolean; toggleDarkMode?: () => void }>
                         <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" /><path d="M19 10v2a7 7 0 0 1-14 0v-2" /><line x1="12" y1="19" x2="12" y2="23" /><line x1="8" y1="23" x2="16" y2="23" />
                       </svg>
                     </button>
-                    <div className="model-indicator">
-                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none">
-                        <circle cx="12" cy="12" r="10" fill="#10b981" />
-                      </svg>
-                      GPT-4 LEGAL MODEL ACTIVE
-                    </div>
                   </div>
                 </div>
                 <p className="input-disclaimer">
@@ -1080,12 +1571,80 @@ const AIagentPage: React.FC<{ darkMode?: boolean; toggleDarkMode?: () => void }>
             )}
           </div>
 
-          {/* ── Right Panel — Reasoning ────────────────────────────────── */}
+          {/* ── Right Panel ────────────────────────────────────────────── */}
           {hasStartedChat && (
-            <aside className="right-panel">
-              <div className="right-panel-content" style={{ paddingTop: '12px' }}>
-                <ReasoningPanel routedTo={activeRoutedTo} isTyping={isTyping} />
-              </div>
+            <aside className={`right-panel${!rightPanelOpen ? ' right-panel--collapsed' : ''}`}>
+              <button
+                className="rp-collapse-btn"
+                onClick={() => setRightPanelOpen(o => !o)}
+                title={rightPanelOpen ? 'Collapse panel' : 'Expand panel'}
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points={rightPanelOpen ? '15 18 9 12 15 6' : '9 18 15 12 9 6'} />
+                </svg>
+              </button>
+              {rightPanelOpen && (
+                <div className="right-panel-content" style={{ paddingTop: '12px' }}>
+                  {/* Doc preview replaces reasoning panel when a citation is clicked */}
+                  {previewCitation ? (
+                    <div className="doc-preview-panel">
+                      <div className="doc-preview-header">
+                        <span className="doc-preview-title">{previewCitation.title}</span>
+                        <button
+                          className="doc-preview-close"
+                          onClick={() => setPreviewCitation(null)}
+                          aria-label="Close preview"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                      <div className="doc-preview-body">
+                        {previewLoading ? (
+                          <p className="doc-preview-no-content">Loading document…</p>
+                        ) : previewCitation.excerpt ? (
+                          <>
+                            <div className="doc-preview-highlight">
+                              <span className="doc-preview-highlight-label">Cited section</span>
+                              <p className="doc-preview-excerpt">"{previewCitation.excerpt}…"</p>
+                            </div>
+                            {previewCitation.url && (
+                              <a
+                                href={previewCitation.url}
+                                target="_blank"
+                                rel="noreferrer noopener"
+                                className="doc-preview-open-btn"
+                              >
+                                Open full document ↗
+                              </a>
+                            )}
+                          </>
+                        ) : previewCitation.url ? (
+                          <a
+                            href={previewCitation.url}
+                            target="_blank"
+                            rel="noreferrer noopener"
+                            className="doc-preview-open-btn"
+                          >
+                            Open full document ↗
+                          </a>
+                        ) : (
+                          <p className="doc-preview-no-content">No preview available for this source.</p>
+                        )}
+                      </div>
+                    </div>
+                  ) : (
+                    <ReasoningPanel
+                      routedTo={activeRoutedTo}
+                      isTyping={isTyping}
+                      currentEvent={currentEvent}
+                      events={events}
+                      carbonG={lastCompleteEvent?.carbonG}
+                      sessionMetrics={sessionMetrics}
+                      lastMetrics={lastAssistant?.metrics}
+                    />
+                  )}
+                </div>
+              )}
             </aside>
           )}
         </div>

@@ -1,7 +1,14 @@
-import pytest
+import sys
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
-from app.graph.state import GraphState
-from app.services.llm_client import LLMResponse
+
+import pytest
+
+ROOT_DIR = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT_DIR))
+
+from app.graph.state import GraphState  # noqa: E402
+from app.services.llm_client import LLMResponse  # noqa: E402
 
 
 @pytest.fixture

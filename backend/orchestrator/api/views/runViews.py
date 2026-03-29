@@ -7,8 +7,13 @@ from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from rest_framework import status
 
+from orchestrator.audit_logger import log_audit
+
 try:
-    from orchestrator.api.schemas.runSchemas import CreateRunRequestSerializer
+    from orchestrator.api.schemas.runSchemas import (
+        CreateRunRequestSerializer,
+        PatchRunRequestSerializer,
+    )
     from orchestrator.api.errors.errorMapping import (
         invalidRequestError,
         runNotFoundError,
@@ -21,7 +26,10 @@ try:
         DEFAULT_CARBON_G,
     )
 except ModuleNotFoundError:
-    from api.schemas.runSchemas import CreateRunRequestSerializer
+    from api.schemas.runSchemas import (
+        CreateRunRequestSerializer,
+        PatchRunRequestSerializer,
+    )
     from api.errors.errorMapping import (
         invalidRequestError,
         runNotFoundError,
@@ -34,14 +42,23 @@ except ModuleNotFoundError:
         DEFAULT_CARBON_G,
     )
 
-# in-memory stores for stubbed API responses
-# to be replaced with LangGraph output
 RUN_STORE = {}
 SOURCE_STORE = {}
 
 
 def getIsoTimestamp():
     return datetime.now(timezone.utc).isoformat()
+
+
+def _infer_priority(query: str) -> str:
+    high_indicators = ["urgent", "critical", "deadline", "immediate", "compliance"]
+    low_indicators = ["general", "overview", "summary", "curious"]
+    q_lower = query.lower()
+    if any(kw in q_lower for kw in high_indicators):
+        return "high"
+    if any(kw in q_lower for kw in low_indicators):
+        return "low"
+    return "medium"
 
 
 @api_view(["POST"])
@@ -54,15 +71,23 @@ def createRun(request):
             invalidRequestError(serializer.errors),
             status=status.HTTP_400_BAD_REQUEST,
         )
+
+    request_id = str(uuid.uuid4())
     runId = f"run_{uuid.uuid4().hex[:12]}"
     createdAt = getIsoTimestamp()
+    query = serializer.validated_data["query"]
+
+    # Use explicitly provided priority, otherwise infer from query text
+    priority = serializer.validated_data.get("priority") or _infer_priority(query)
 
     RUN_STORE[runId] = {
-        "query": serializer.validated_data["query"],
+        "query": query,
         "createdAt": createdAt,
+        "status": RUN_STATUS_RUNNING,
+        "priority": priority,
+        "request_id": request_id,
     }
 
-    # stub to prevent broken citation links in FE
     SOURCE_STORE["src_001"] = {
         "sourceId": "src_001",
         "title": "Placeholder Source",
@@ -73,7 +98,9 @@ def createRun(request):
         {
             "runId": runId,
             "status": RUN_STATUS_RUNNING,
+            "priority": priority,
             "createdAt": createdAt,
+            "request_id": request_id,
         },
         status=status.HTTP_201_CREATED,
     )
@@ -89,6 +116,8 @@ def listRuns(request):
                 "runId": runId,
                 "title": "Placeholder Analysis",
                 "updatedAt": run["createdAt"],
+                "status": run.get("status", RUN_STATUS_RUNNING),
+                "priority": run.get("priority", _infer_priority(run.get("query", ""))),
             }
         )
 
@@ -102,9 +131,12 @@ def getRun(request, runId):
     if not run:
         return Response(runNotFoundError(runId), status=status.HTTP_404_NOT_FOUND)
 
+    start_time = datetime.now(timezone.utc)
+
     responseBody = {
         "runId": runId,
-        "status": RUN_STATUS_COMPLETED,
+        "status": run.get("status", RUN_STATUS_COMPLETED),
+        "priority": run.get("priority", _infer_priority(run.get("query", ""))),
         "title": "Placeholder Legal Analysis",
         "lastUpdatedAt": run["createdAt"],
         "keyFinding": {
@@ -159,7 +191,55 @@ def getRun(request, runId):
         },
     }
 
+    end_time = datetime.now(timezone.utc)
+    latency_ms = (end_time - start_time).total_seconds() * 1000
+
+    audit_log = {
+        "request_id": run.get("request_id"),
+        "run_id": runId,
+        "timestamp": getIsoTimestamp(),
+        "query": run.get("query"),
+        "sources": responseBody["references"]["sourceIds"],
+        "response": responseBody["agentCommentary"]["content"],
+        "model_used": "stub-model",
+        "latency_ms": latency_ms,
+    }
+
+    log_audit(audit_log)
+
     return Response(responseBody, status=status.HTTP_200_OK)
+
+
+@api_view(["PATCH"])
+@permission_classes([IsAuthenticated])
+def patchRun(request, runId):
+    run = RUN_STORE.get(runId)
+    if not run:
+        return Response(runNotFoundError(runId), status=status.HTTP_404_NOT_FOUND)
+
+    serializer = PatchRunRequestSerializer(data=request.data)
+    if not serializer.is_valid():
+        return Response(
+            invalidRequestError(serializer.errors),
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    if "status" in serializer.validated_data:
+        RUN_STORE[runId]["status"] = serializer.validated_data["status"]
+    if "priority" in serializer.validated_data:
+        RUN_STORE[runId]["priority"] = serializer.validated_data["priority"]
+
+    RUN_STORE[runId]["updatedAt"] = getIsoTimestamp()
+
+    return Response(
+        {
+            "runId": runId,
+            "status": RUN_STORE[runId].get("status"),
+            "priority": RUN_STORE[runId].get("priority"),
+            "updatedAt": RUN_STORE[runId]["updatedAt"],
+        },
+        status=status.HTTP_200_OK,
+    )
 
 
 @api_view(["GET"])
