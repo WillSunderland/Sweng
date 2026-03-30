@@ -121,9 +121,25 @@
   appearance: none;
 }
 
-.sidebar-nav-item:hover {
+.sidebar-nav-item:hover:not(:disabled) {
   background: var(--bg-light);
   color: var(--text);
+}
+
+.sidebar-nav-item:focus {
+  outline: none;
+}
+
+.sidebar-nav-item:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: -2px;
+}
+
+.sidebar-nav-item:disabled {
+  cursor: default;
+  pointer-events: none;
+  color: var(--text-body);
+  opacity: 1;
 }
 
 .sidebar-nav-item.active {

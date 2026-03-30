@@ -1,5 +1,5 @@
 /* ─── Page Shell ──────────────────────────────────────────────────────────── */
-.green-page { height: 100vh; max-height: 100vh; overflow: hidden; display: flex; font-family: 'Inter', 'Roboto', 'Helvetica Neue', sans-serif; color: var(--text); }
+.green-page { height: 100vh; max-height: 100vh; overflow: hidden; display: flex; color: var(--text); }
 
 .green-main {
   flex: 1;
@@ -8,6 +8,7 @@
   padding: 24px 28px 28px;
   background: var(--glass-bg-secondary, transparent);
   display: flex;
+  font-family: 'Inter', 'Roboto', 'Helvetica Neue', sans-serif;
   flex-direction: column;
   gap: 18px;
 }

@@ -134,8 +134,6 @@ interface AgentEvent {
 // ─── Config ───────────────────────────────────────────────────────────────────
 
 const BASE_URL = 'http://localhost:8000';
-const POLL_INTERVAL_MS = 1500;
-const POLL_TIMEOUT_MS = 60_000;
 const STREAM_TIMEOUT_MS = 90_000;
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
