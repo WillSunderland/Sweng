@@ -2,10 +2,10 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useNavigate, NavLink } from 'react-router-dom';
 import propylonLogo from '../../assets/propylon_logo.svg';
 import './AIagentPage.css';
-import sunIcon from '../../assets/lighModeSun.png';
-import moonIcon from '../../assets/darkModeMoon.png';
 import { Brain, Search, BookOpen, CheckCircle2, Leaf, Paperclip, Cpu, Sparkles, AlertCircle } from 'lucide-react';
 import { API_BASE_URL, POLL_INTERVAL_MS, POLL_TIMEOUT_MS, buildAuthHeaders, getAuthToken } from '../../constants/apiConfig';
+
+import ThemeToggle from '../../components/ThemeToggle/ThemeToggle';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -133,7 +133,7 @@ interface AgentEvent {
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
-const BASE_URL = API_BASE_URL;
+const BASE_URL = 'http://localhost:8000';
 const STREAM_TIMEOUT_MS = 90_000;
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -141,10 +141,9 @@ const STREAM_TIMEOUT_MS = 90_000;
 const nowStr = (): string =>
   new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
-function cleanText(raw: unknown): string {
+function cleanText(raw: string): string {
   if (!raw) return '';
-  const str = typeof raw === 'string' ? raw : JSON.stringify(raw);
-  return str
+  return raw
     .replace(/<\/?[a-zA-Z][^>]*>/g, ' ')
     .replace(/\[[^\]]*\]/g, '')
     .replace(/\([*^†‡§¶\d]+\)/g, '')
@@ -210,10 +209,7 @@ function titleFromId(id: string): string {
 
 async function fetchSourceDetail(sourceId: string): Promise<SourceDetail | null> {
   try {
-    const res = await fetch(`${BASE_URL}/api/sources/${sourceId}`, {
-      headers: buildAuthHeaders(),
-      credentials: 'include',
-    });
+    const res = await fetch(`${BASE_URL}/api/sources/${sourceId}`);
     if (!res.ok) return null;
     return await res.json();
   } catch {
@@ -287,9 +283,8 @@ async function parseResponse(run: RunResult): Promise<ParsedResponse> {
 async function createRun(query: string): Promise<string> {
   const res = await fetch(`${BASE_URL}/api/runs`, {
     method: 'POST',
-    headers: buildAuthHeaders({ 'Content-Type': 'application/json' }),
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ query }),
-    credentials: 'include',
   });
   if (!res.ok) throw new Error(`Failed to start run (${res.status}): ${await res.text()}`);
   const data = await res.json();
@@ -299,10 +294,7 @@ async function createRun(query: string): Promise<string> {
 async function pollRun(runId: string): Promise<RunResult> {
   const deadline = Date.now() + POLL_TIMEOUT_MS;
   while (Date.now() < deadline) {
-    const res = await fetch(`${BASE_URL}/api/runs/${runId}`, {
-      headers: buildAuthHeaders(),
-      credentials: 'include',
-    });
+    const res = await fetch(`${BASE_URL}/api/runs/${runId}`);
     if (!res.ok) throw new Error(`Poll failed (${res.status})`);
     const data: RunResult = await res.json();
     if (data.status === 'completed') return data;
@@ -345,13 +337,8 @@ function useAgentStream() {
     return new Promise((resolve, reject) => {
       setState({ currentEvent: null, events: [], isStreaming: true, completedRunId: null, streamError: null });
 
-      const streamUrl = new URL(`${BASE_URL}/api/runs/stream`, window.location.origin);
-      streamUrl.searchParams.set('query', query);
-      const token = getAuthToken();
-      if (token) {
-        streamUrl.searchParams.set('token', token);
-      }
-      const es = new EventSource(streamUrl.toString(), { withCredentials: true });
+      const url = `${BASE_URL}/api/runs/stream?query=${encodeURIComponent(query)}`;
+      const es = new EventSource(url);
       esRef.current = es;
       const localEvents: AgentEvent[] = [];
 
@@ -758,10 +745,11 @@ const ReasoningPanel: React.FC<{
   currentEvent?: AgentEvent | null;
   events?: AgentEvent[];
   carbonG?: number;
+  sourcesCount?: number;
   // Polling-path fallback metrics
   sessionMetrics?: { totalCarbonG: number; totalTokens: number; queryCount: number };
   lastMetrics?: GreenMetrics;
-}> = ({ routedTo, isTyping, currentEvent, events = [], carbonG, sessionMetrics, lastMetrics }) => {
+}> = ({ routedTo, isTyping, currentEvent, events = [], carbonG, sourcesCount, sessionMetrics, lastMetrics }) => {
   const liveElapsed = useLiveTimer(!!isTyping);
 
   const ORDER: AgentEventType[] = ['init', 'thinking', 'searching', 'reading', 'generating', 'complete'];
@@ -778,16 +766,20 @@ const ReasoningPanel: React.FC<{
 
   const getElapsed = (e: AgentEventType) => events.find((ev) => ev.event === e)?.elapsed;
 
-  const docCount     = currentEvent?.docCount ?? events.find((e) => e.event === 'reading')?.docCount;
+  // docCount: check all events, then fall back to citation count from the last response
+  const docCount     = currentEvent?.docCount ?? events.find((e) => e.docCount != null)?.docCount ?? sourcesCount;
   const tokenCount   = events.find((e) => e.event === 'complete')?.tokenCount ?? currentEvent?.tokenCount;
-  const totalElapsed = events.find((e) => e.event === 'complete')?.elapsed ?? currentEvent?.elapsed;
+  // totalElapsed: fall back to liveElapsed so TIME always shows after a query
+  const totalElapsed = events.find((e) => e.event === 'complete')?.elapsed
+    ?? currentEvent?.elapsed
+    ?? (liveElapsed > 0 ? liveElapsed : null);
 
   const hasStreamData = events.length > 0;
   const realCarbonG   = carbonG ?? events.find((e) => e.event === 'complete')?.carbonG;
   const co2g = realCarbonG
     ?? (hasStreamData ? (tokenCount ? tokenCount * 0.0003 : 0.3) : (lastMetrics?.carbonG ?? 0));
-  const co2Display = co2g < 0.001
-    ? `${(co2g * 1_000_000).toFixed(2)} μg`
+  const co2Display = co2g === 0
+    ? '0.00 g'
     : co2g < 1
       ? `${(co2g * 1000).toFixed(2)} mg`
       : `${co2g.toFixed(3)} g`;
@@ -1177,17 +1169,19 @@ const AIagentPage: React.FC<{ darkMode?: boolean; toggleDarkMode?: () => void }>
           <div className="sidebar-section">
             <div className="sidebar-section-label">INTERNAL TOOLS</div>
             <nav className="sidebar-nav">
-              <div className="sidebar-nav-item" onClick={() => navigate('/workspace')}>
+              <div className="sidebar-nav-item" onClick={() => navigate('/green-computing')}>
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
+                  <path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.48 19 2c1 2 2 4.18 2 8 0 5.5-4.78 10-10 10z"/>
+                  <path d="M2 21c0-3 1.85-5.36 5.08-6C9.5 14.52 12 13 13 12"/>
                 </svg>
-                <span>Propylon Research</span>
+                <span>Green Computing</span>
               </div>
               <NavLink to="/ai-agent" className={({ isActive }) => `sidebar-nav-item${isActive ? ' active' : ''}`}>
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M12 2a4 4 0 0 1 4 4v2H8V6a4 4 0 0 1 4-4z" />
                   <rect x="4" y="8" width="16" height="12" rx="2" />
-                  <circle cx="9" cy="14" r="1" fill="currentColor" /><circle cx="15" cy="14" r="1" fill="currentColor" />
+                  <circle cx="9" cy="14" r="1" fill="currentColor" />
+                  <circle cx="15" cy="14" r="1" fill="currentColor" />
                 </svg>
                 <span>AI Assistant</span>
               </NavLink>
@@ -1203,35 +1197,11 @@ const AIagentPage: React.FC<{ darkMode?: boolean; toggleDarkMode?: () => void }>
             New Research Case
           </button>
           {toggleDarkMode && (
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 4px' }}>
-              <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-                {darkMode ? 'Dark Mode' : 'Light Mode'}
-              </span>
-              <button
-                onClick={toggleDarkMode}
-                style={{
-                  width: '44px', height: '24px', borderRadius: '999px',
-                  border: 'none', cursor: 'pointer', padding: 0,
-                  background: darkMode ? '#3b82f6' : '#e2e8f0',
-                  transition: 'background 0.3s ease',
-                  display: 'flex', alignItems: 'center',
-                }}
-              >
-                <span className="toggle-thumb" style={{
-                  width: '18px', height: '18px', borderRadius: '50%',
-                  background: 'white', display: 'flex', alignItems: 'center',
-                  justifyContent: 'center', overflow: 'hidden',
-                  transform: darkMode ? 'translateX(22px)' : 'translateX(3px)',
-                  boxShadow: '0 1px 4px rgba(0,0,0,0.2)',
-                }}>
-                  <img src={darkMode ? moonIcon : sunIcon} width="12" height="12" style={{ objectFit: 'contain' }} />
-                </span>
-              </button>
-            </div>
+            <ThemeToggle darkMode={!!darkMode} toggle={toggleDarkMode} />
           )}
           <div className="sidebar-user">
             <div className="sidebar-user-avatar">
-              <img src="https://ui-avatars.com/api/?name=James+Sterling&background=e2e8f0&color=475569&size=36&font-size=0.4&bold=true" alt="JS" />
+              <img src="https://api.dicebear.com/7.x/avataaars/svg?seed=James&backgroundColor=b6e3f4" alt="JS" />
             </div>
             <div className="sidebar-user-info">
               <span className="sidebar-user-name">James Sterling</span>
@@ -1639,6 +1609,7 @@ const AIagentPage: React.FC<{ darkMode?: boolean; toggleDarkMode?: () => void }>
                       currentEvent={currentEvent}
                       events={events}
                       carbonG={lastCompleteEvent?.carbonG}
+                      sourcesCount={lastAssistant?.parsed?.citations?.length}
                       sessionMetrics={sessionMetrics}
                       lastMetrics={lastAssistant?.metrics}
                     />

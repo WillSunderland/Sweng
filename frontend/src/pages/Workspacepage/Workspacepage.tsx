@@ -1,5 +1,9 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
+import {
+  Bell, Settings, TrendingUp, CheckCircle2, RefreshCw, FileText,
+  Leaf, Hash, Clock, ChevronRight, Activity,
+} from 'lucide-react';
 import AppSidebar from '../../components/AppSidebar/AppSidebar';
 import '../../components/AppSidebar/SharedSidebar.css';
 import './Workspacepage.css';
@@ -468,13 +472,14 @@ const WorkspacePage: React.FC<WorkspacePageProps> = ({ darkMode, toggleDarkMode 
             )}
           </div>
           <div className="header-actions">
-            {/* Page-level spinner appears here when loading */}
             {loading && <PageSpinner />}
-            <button className="icon-btn notification-btn">
+            <button className="icon-btn notification-btn" aria-label="Notifications">
               <span className="notification-badge"></span>
-              🔔
+              <Bell size={15} strokeWidth={1.8} />
             </button>
-            <button className="icon-btn">⚙️</button>
+            <button className="icon-btn" aria-label="Settings">
+              <Settings size={15} strokeWidth={1.8} />
+            </button>
           </div>
         </header>
 
@@ -585,17 +590,17 @@ const WorkspacePage: React.FC<WorkspacePageProps> = ({ darkMode, toggleDarkMode 
                           <div className="ws-green-badge">
                             {item.carbonG > 0 && (
                               <span className="ws-green-badge-item" title="Estimated CO₂">
-                                🌿 {item.carbonG.toFixed(4)}g CO₂
+                                <Leaf size={10} strokeWidth={2} /> {item.carbonG.toFixed(4)}g CO₂
                               </span>
                             )}
                             {!!item.tokens_used && item.tokens_used > 0 && (
                               <span className="ws-green-badge-item" title="Tokens used">
-                                🔢 {item.tokens_used.toLocaleString()} tok
+                                <Hash size={10} strokeWidth={2} /> {item.tokens_used.toLocaleString()} tok
                               </span>
                             )}
                             {!!item.latency_ms && item.latency_ms > 0 && (
                               <span className="ws-green-badge-item" title="Query latency">
-                                ⏱ {(item.latency_ms / 1000).toFixed(1)}s
+                                <Clock size={10} strokeWidth={2} /> {(item.latency_ms / 1000).toFixed(1)}s
                               </span>
                             )}
                           </div>
@@ -630,14 +635,7 @@ const WorkspacePage: React.FC<WorkspacePageProps> = ({ darkMode, toggleDarkMode 
           )}
         </div>
 
-        <div className="bottom-action">
-          <button className="btn-primary-large" onClick={() => setShowNewCaseModal(true)}>
-            <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-              <path d="M10 4v12M4 10h12" stroke="white" strokeWidth="2" strokeLinecap="round"/>
-            </svg>
-            New Research Case
-          </button>
-        </div>
+        
       </main>
 
       {/* ── Right sidebar ── */}
@@ -668,26 +666,45 @@ const WorkspacePage: React.FC<WorkspacePageProps> = ({ darkMode, toggleDarkMode 
         </div>
 
         <div className="efficiency-card">
-          <div className="efficiency-icon">✓</div>
-          <h4 className="efficiency-title">AI Efficiency</h4>
+          <div className="efficiency-header">
+            <div className="efficiency-icon">
+              <TrendingUp size={14} strokeWidth={2} />
+            </div>
+            <span className="efficiency-label">AI EFFICIENCY</span>
+            <span className="efficiency-live-pill">Live</span>
+          </div>
+
           {widgetsLoading ? (
-            <p className="efficiency-stat">Loading…</p>
+            <div className="ws-widget-skeleton" style={{ margin: '8px 0' }} />
           ) : efficiency ? (
             <>
-              <p className="efficiency-stat">
-                {efficiency.totalQueries} queries processed · avg {efficiency.avgCarbonPerQueryG}g CO₂ per query
-                {efficiency.avgTokensPerQuery > 0 && ` · ~${efficiency.avgTokensPerQuery.toLocaleString()} tokens avg`}
-              </p>
-              {Object.keys(efficiency.modelUsage).length > 0 && (
-                <p className="efficiency-stat" style={{ fontSize: '11px', opacity: 0.85, marginTop: '4px' }}>
-                  Models: {Object.entries(efficiency.modelUsage).map(([m, c]) => `${m} (${c})`).join(', ')}
+              <div className="efficiency-metrics">
+                <div className="efficiency-metric">
+                  <span className="efficiency-metric-val">{efficiency.totalQueries}</span>
+                  <span className="efficiency-metric-label">Queries</span>
+                </div>
+                <div className="efficiency-metric">
+                  <span className="efficiency-metric-val">{efficiency.avgCarbonPerQueryG}g</span>
+                  <span className="efficiency-metric-label">Avg CO₂</span>
+                </div>
+              </div>
+              {efficiency.avgTokensPerQuery > 0 && (
+                <p className="efficiency-sub">
+                  ~{efficiency.avgTokensPerQuery.toLocaleString()} avg tokens
+                  {Object.keys(efficiency.modelUsage).length > 0 && (
+                    <> · {Object.keys(efficiency.modelUsage)[0]}</>
+                  )}
                 </p>
               )}
             </>
           ) : (
             <p className="efficiency-stat">No efficiency data yet.</p>
           )}
-          <div className="efficiency-badge">Efficiency</div>
+
+          <div className="efficiency-badge">
+            <CheckCircle2 size={11} strokeWidth={2.5} />
+            Efficient
+          </div>
         </div>
 
         <div className="sidebar-widget">
@@ -702,8 +719,12 @@ const WorkspacePage: React.FC<WorkspacePageProps> = ({ darkMode, toggleDarkMode 
             ) : (
               activity.map(a => (
                 <div key={a.runId} className="activity-item">
-                  <div className="activity-icon">
-                    {a.status === 'completed' ? '✓' : a.status === 'running' ? '🔄' : '⚡'}
+                  <div className={`activity-icon activity-icon--${a.status}`}>
+                    {a.status === 'completed'
+                      ? <CheckCircle2 size={14} strokeWidth={2} />
+                      : a.status === 'running'
+                        ? <RefreshCw size={14} strokeWidth={2} />
+                        : <FileText size={14} strokeWidth={2} />}
                   </div>
                   <div className="activity-content">
                     <p className="activity-title">{a.query.length > 60 ? a.query.slice(0, 60) + '…' : a.query}</p>

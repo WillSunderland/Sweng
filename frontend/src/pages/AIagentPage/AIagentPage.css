@@ -44,7 +44,7 @@
 
 /* ─── Left Sidebar ───────────────────────────────────────────────────────────── */
 
-.ai-sidebar {
+.ai-agent-page .ai-sidebar {
   width: var(--sidebar-width, 240px);
   min-width: var(--sidebar-width, 240px);
   height: 100vh;
@@ -218,26 +218,7 @@
   justify-content: center;
   margin-left: 8px;
 }
-.dark-mode-toggle {
-  background: none;
-  border: 1px solid var(--border-light);
-  color: var(--text-muted);
-  cursor: pointer;
-  padding: 6px 10px;
-  border-radius: 8px;
-  transition: all 0.15s;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  font-weight: 500;
-  margin-left: 4px;
-}
-.dark-mode-toggle:hover {
-  background: var(--bg-light);
-  color: var(--text);
-  border-color: var(--accent-blue);
-}
+
 .chat-header-settings:hover { background: var(--bg-light); color: var(--text); }
 
 /* Minimal header right-side controls */
@@ -2230,3 +2211,44 @@
   font-size: 13px;
   color: var(--text-muted);
 }
+
+/* ─── Dark Mode Overrides ────────────────────────────────────────────────────── */
+/*
+  The app toggles dark mode by adding the "dark" class to <html>.
+  Override the hardcoded light palette values used in this file.
+*/
+
+html.dark .ai-agent-page {
+  /* Remap parchment/border palette to dark-mode equivalents */
+  --inst-paper:      var(--bg);
+  --inst-paper-dark: var(--bg-light);
+  --inst-border:     var(--border-light);
+}
+
+/* Assistant message bubble was hardcoded #ffffff */
+html.dark .message-bubble.assistant {
+  background: var(--card-bg);
+  border-color: var(--border-light);
+  color: var(--text);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
+}
+
+/* Error bubble — ensure red text is readable in dark */
+html.dark .message-bubble.error {
+  color: #fca5a5;
+}
+
+/* Reasoning panel title: --inst-navy (#1e2d3d) is invisible on dark bg */
+html.dark .rpanel-title { color: var(--text-dark); }
+
+/* Green badge: dark green text (#065f46) is invisible on dark bg */
+html.dark .green-metrics-badge {
+  background: rgba(16, 185, 129, 0.12);
+  border-color: rgba(16, 185, 129, 0.25);
+  color: #6ee7b7;
+}
+
+/* Fix incorrectly scoped [data-theme="dark"] rules — app uses html.dark */
+html.dark .rpanel-stats-section-label { color: var(--text-dark); }
+html.dark .rpanel-green-value         { color: #6ee7b7; }
+html.dark .rpanel-carbon-context      { color: var(--text-body); }
