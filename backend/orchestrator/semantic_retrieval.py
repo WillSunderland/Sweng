@@ -4,8 +4,8 @@ from typing import Any, Dict, List, Optional
 
 from elasticsearch import Elasticsearch
 from sentence_transformers import SentenceTransformer
-from mmr import mmr_rerank
-from cross_encoder import CrossEncoderReranker
+from backend.orchestrator.mmr import mmr_rerank
+from backend.orchestrator.cross_encoder import CrossEncoderReranker
 
 
 class SemanticRetriever:

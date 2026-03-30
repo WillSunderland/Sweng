@@ -11,6 +11,7 @@ import Login from "./pages/Login/Login";
 import Register from "./pages/Register/Register";
 import AIagentPage from "./pages/AIagentPage/AIagentPage";
 import GreenComputingPage from "./pages/GreenComputingPage/GreenComputingPage";
+import ForgotPassword from './pages/ForgotPassword/ForgotPassword';
 import './App.css';
 
 function App() {
@@ -32,6 +33,7 @@ function App() {
       <Routes>
         <Route path="/" element={<LandingPage />} />
         <Route path="/login" element={<Login />} />
+        <Route path="/forgot-password" element={<ForgotPassword />} />
         <Route path="/register" element={<Register />} />
         <Route path="/workspace" element={<WorkspacePage darkMode={darkMode} toggleDarkMode={toggleDarkMode} />} />
         <Route path="/report/:id" element={<ReportViewPage darkMode={darkMode} toggleDarkMode={toggleDarkMode} />} />

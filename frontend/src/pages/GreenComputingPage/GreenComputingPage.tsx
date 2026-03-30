@@ -217,11 +217,12 @@ const GreenComputingPage: React.FC<GreenComputingPageProps> = ({ darkMode, toggl
   useEffect(() => {
     const fetchRunData = async () => {
       try {
-        const res = await fetch('http://localhost:8000/api/runs?limit=1000');
+        const res = await fetch('/api/runs?limit=1000');
         if (res.ok) {
           const data = await res.json();
-          setDbRunCount(data.length);
-          const totalCarbon = data.reduce((sum: number, run: any) => sum + (run.emissions_g_co2eq || 0.15), 0);
+          const runs = data.items || [];
+          setDbRunCount(runs.length > 0 ? runs.length : data.total || 0);
+          const totalCarbon = runs.reduce((sum: number, run: any) => sum + (run.carbonG || 0.3), 0);
           setTotalBackendCarbon(totalCarbon);
         } else {
           setTotalBackendCarbon(45.5);

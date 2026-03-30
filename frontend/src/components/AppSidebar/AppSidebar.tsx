@@ -1,8 +1,9 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import propylonLogo from '../../assets/propylon_logo.svg';
 import ThemeToggle from '../ThemeToggle/ThemeToggle';
 import '../../components/AppSidebar/SharedSidebar.css';
+import { getCurrentUserDisplayName, hydrateCurrentUserDisplayName } from '../../lib/userSession';
 
 export type SidebarActiveItem = 'workspace' | 'archive' | 'assistant' | 'green';
 
@@ -14,6 +15,14 @@ interface AppSidebarProps {
 
 const AppSidebar: React.FC<AppSidebarProps> = ({ activeItem, darkMode = false, toggleDarkMode }) => {
   const navigate = useNavigate();
+  const [userName, setUserName] = useState(getCurrentUserDisplayName());
+  const avatarSeed = userName.replace(/\s+/g, '-');
+
+  useEffect(() => {
+    hydrateCurrentUserDisplayName().then(() => {
+      setUserName(getCurrentUserDisplayName());
+    }).catch(() => {});
+  }, []);
 
   return (
     <aside className="ai-sidebar">
@@ -44,7 +53,11 @@ const AppSidebar: React.FC<AppSidebarProps> = ({ activeItem, darkMode = false, t
               <span>Workspace</span>
             </button>
 
-            <button type="button" className="sidebar-nav-item" disabled>
+            <button
+              type="button"
+              className="sidebar-nav-item"
+              onClick={() => navigate('/workspace?view=drafts')}
+            >
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
                 <polyline points="14 2 14 8 20 8" />
@@ -52,7 +65,11 @@ const AppSidebar: React.FC<AppSidebarProps> = ({ activeItem, darkMode = false, t
               <span>Drafts</span>
             </button>
 
-            <button type="button" className="sidebar-nav-item" disabled>
+            <button
+              type="button"
+              className="sidebar-nav-item"
+              onClick={() => navigate('/workspace?view=shared')}
+            >
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
                 <circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" />
@@ -121,13 +138,13 @@ const AppSidebar: React.FC<AppSidebarProps> = ({ activeItem, darkMode = false, t
         <div className="sidebar-user">
           <div className="sidebar-user-avatar">
             <img
-              src="https://api.dicebear.com/7.x/avataaars/svg?seed=James&backgroundColor=b6e3f4"
-              alt="JS"
+              src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(avatarSeed)}&backgroundColor=b6e3f4`}
+              alt={userName}
             />
           </div>
           <div className="sidebar-user-info">
-            <span className="sidebar-user-name">James Sterling</span>
-            <span className="sidebar-user-role">Senior Counsel</span>
+            <span className="sidebar-user-name">{userName}</span>
+            <span className="sidebar-user-role">Legal Professional</span>
           </div>
         </div>
       </div>

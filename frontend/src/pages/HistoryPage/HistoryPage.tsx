@@ -1,6 +1,5 @@
-
 import { useNavigate } from 'react-router-dom';
-import { useState } from 'react';
+import { useEffect, useState, type JSX } from 'react';
 import {
   ArrowLeft, Search, Download, FileText,
   Scale, Briefcase, FileCheck, Shield,
@@ -10,17 +9,17 @@ import {
 import AppSidebar from '../../components/AppSidebar/AppSidebar';
 import '../../components/AppSidebar/SharedSidebar.css';
 import './HistoryPage.css';
-
-// ─── Types ────────────────────────────────────────────────────────────────────
+import { API_BASE_URL, buildAuthHeaders } from '../../constants/apiConfig';
+import { isRunShared } from '../../lib/sharedRuns';
 
 type SortKey = 'date' | 'type' | 'confidence' | 'team';
 type SortDirection = 'asc' | 'desc';
 
 interface ArchiveCase {
-  id: number;
+  id: string;
   title: string;
   date: string;
-  confidence: string;
+  confidence: number | null;
   type: string;
   team: string;
 }
@@ -30,22 +29,17 @@ interface HistoryPageProps {
   toggleDarkMode: () => void;
 }
 
-// ─── Config ───────────────────────────────────────────────────────────────────
-
-type IconComponent = React.FC<{ size?: number; strokeWidth?: number }>;
+type IconComponent = (props: { size?: number; strokeWidth?: number }) => JSX.Element;
 
 const TYPE_CONFIG: Record<string, { bg: string; color: string; Icon: IconComponent }> = {
   Litigation:      { bg: '#eff6ff', color: '#2563eb', Icon: Scale as IconComponent },
   Advisory:        { bg: '#f5f3ff', color: '#8b5cf6', Icon: Briefcase as IconComponent },
   Contracts:       { bg: '#fffbeb', color: '#f59e0b', Icon: FileCheck as IconComponent },
   Regulatory:      { bg: '#ecfdf5', color: '#10b981', Icon: Shield as IconComponent },
-  'Due Diligence': { bg: '#f0f9ff', color: '#0ea5e9', Icon: FileText as IconComponent },
 };
 
 const formatDate = (d: string) =>
   new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-
-// ─── Skeleton Row ─────────────────────────────────────────────────────────────
 
 const SkeletonRow = () => (
   <div className="skeleton-row">
@@ -63,26 +57,75 @@ const SkeletonRow = () => (
   </div>
 );
 
-// ─── Component ────────────────────────────────────────────────────────────────
-
 const HistoryPage = ({ darkMode, toggleDarkMode }: HistoryPageProps) => {
   const navigate = useNavigate();
-  const [sortKey, setSortKey]             = useState<SortKey>('date');
+  const [sortKey, setSortKey] = useState<SortKey>('date');
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
-  const [search, setSearch]               = useState('');
+  const [search, setSearch] = useState('');
+  const [cases, setCases] = useState<ArchiveCase[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const cases: ArchiveCase[] = [
-    { id: 1, title: 'Patent Infringement Analysis',     date: '2026-01-28', confidence: '97.1', type: 'Litigation',     team: 'IP Counsel' },
-    { id: 2, title: 'Data Privacy Compliance Audit',    date: '2026-01-15', confidence: '98.4', type: 'Regulatory',     team: 'Privacy Desk' },
-    { id: 3, title: 'Employment Law Review',            date: '2026-01-10', confidence: '96.2', type: 'Advisory',       team: 'Labor & Employment' },
-    { id: 4, title: 'Commercial Lease Review',          date: '2026-01-05', confidence: '94.8', type: 'Contracts',      team: 'Commercial Team' },
-    { id: 5, title: 'M&A Risk Summary',                 date: '2025-12-22', confidence: '95.6', type: 'Due Diligence',  team: 'Transactions' },
-    { id: 6, title: 'Vendor Terms Reconciliation',      date: '2025-12-11', confidence: '93.9', type: 'Contracts',      team: 'Procurement Legal' },
-  ];
+  useEffect(() => {
+    let ignore = false;
+
+    async function loadRuns(): Promise<void> {
+      setLoading(true);
+      setError(null);
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/runs?page=1&limit=1000&sort=date&order=desc`, {
+          headers: buildAuthHeaders(),
+          credentials: 'include',
+        });
+        if (!res.ok) throw new Error(`Failed to fetch history (${res.status})`);
+        const data = (await res.json()) as {
+          items?: Array<{
+            runId: string;
+            title?: string;
+            query?: string;
+            updatedAt?: string;
+            createdAt?: string;
+            status?: string;
+            trustScore?: number;
+          }>;
+        };
+
+        const mapped = (data.items ?? []).map((item): ArchiveCase => {
+          const status = item.status ?? 'running';
+          const type =
+            status === 'completed'
+              ? 'Litigation'
+              : status === 'draft'
+                ? 'Contracts'
+                : status === 'in-review'
+                  ? 'Regulatory'
+                  : 'Advisory';
+
+          return {
+            id: item.runId,
+            title: item.title ?? item.query ?? 'Untitled Analysis',
+            date: item.updatedAt ?? item.createdAt ?? new Date().toISOString(),
+            confidence: typeof item.trustScore === 'number' ? item.trustScore * 100 : null,
+            type,
+            team: isRunShared(item.runId) ? 'Shared Team' : 'Personal Workspace',
+          };
+        });
+
+        if (!ignore) setCases(mapped);
+      } catch (err) {
+        if (!ignore) setError(err instanceof Error ? err.message : 'Failed to load history');
+      } finally {
+        if (!ignore) setLoading(false);
+      }
+    }
+
+    loadRuns();
+    return () => { ignore = true; };
+  }, []);
 
   const handleSortChange = (key: SortKey) => {
     if (sortKey === key) {
-      setSortDirection(d => (d === 'asc' ? 'desc' : 'asc'));
+      setSortDirection((d) => (d === 'asc' ? 'desc' : 'asc'));
       return;
     }
     setSortKey(key);
@@ -92,23 +135,42 @@ const HistoryPage = ({ darkMode, toggleDarkMode }: HistoryPageProps) => {
   const sortCases = (items: ArchiveCase[]) =>
     [...items].sort((a, b) => {
       let cmp = 0;
-      if (sortKey === 'date')            cmp = a.date.localeCompare(b.date);
-      else if (sortKey === 'confidence') cmp = parseFloat(a.confidence) - parseFloat(b.confidence);
-      else if (sortKey === 'type')       cmp = a.type.localeCompare(b.type);
-      else if (sortKey === 'team')       cmp = a.team.localeCompare(b.team);
+      if (sortKey === 'date') cmp = a.date.localeCompare(b.date);
+      else if (sortKey === 'confidence') cmp = (a.confidence ?? -1) - (b.confidence ?? -1);
+      else if (sortKey === 'type') cmp = a.type.localeCompare(b.type);
+      else if (sortKey === 'team') cmp = a.team.localeCompare(b.team);
       return sortDirection === 'asc' ? cmp : -cmp;
     });
 
   const query = search.toLowerCase();
-  const filtered = cases.filter(c =>
+  const filtered = cases.filter((c) =>
     !query ||
     c.title.toLowerCase().includes(query) ||
     c.type.toLowerCase().includes(query) ||
     c.team.toLowerCase().includes(query)
   );
 
-  const januaryCases  = sortCases(filtered.filter(c => c.date.startsWith('2026-01')));
-  const decemberCases = sortCases(filtered.filter(c => c.date.startsWith('2025-12')));
+  const groupedByMonth = sortCases(filtered).reduce<Record<string, ArchiveCase[]>>((acc, item) => {
+    const monthLabel = new Date(item.date).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+    acc[monthLabel] = acc[monthLabel] ?? [];
+    acc[monthLabel].push(item);
+    return acc;
+  }, {});
+
+  const monthSections = Object.entries(groupedByMonth).sort((a, b) => {
+    const aTime = new Date(a[1][0]?.date ?? 0).getTime();
+    const bTime = new Date(b[1][0]?.date ?? 0).getTime();
+    return bTime - aTime;
+  });
+
+  const totalCases = cases.length;
+  const completedCases = cases.filter((c) => c.type === 'Litigation').length;
+  const sharedCases = cases.filter((c) => c.team === 'Shared Team').length;
+  const thisMonthCases = cases.filter((c) => {
+    const d = new Date(c.date);
+    const now = new Date();
+    return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+  }).length;
 
   const SortArrow = ({ k }: { k: SortKey }) => {
     if (sortKey !== k) return null;
@@ -138,27 +200,20 @@ const HistoryPage = ({ darkMode, toggleDarkMode }: HistoryPageProps) => {
 
         <div className="case-row-conf">
           <div className="case-conf-track">
-            <div className="case-conf-fill" style={{ width: `${c.confidence}%` }} />
+            <div className="case-conf-fill" style={{ width: `${c.confidence ?? 0}%` }} />
           </div>
-          <span className="case-conf-pct">{c.confidence}%</span>
+          <span className="case-conf-pct">{c.confidence != null ? `${c.confidence.toFixed(1)}%` : '—'}</span>
         </div>
 
         <div className="case-actions">
-          <button
-            className="case-action-primary"
-            onClick={() => navigate(`/report/${c.id}`)}
-          >
+          <button className="case-action-primary" onClick={() => navigate(`/report/${c.id}`)}>
             <ExternalLink size={12} strokeWidth={2} />
             View Report
           </button>
           <button className="case-action-icon" title="Download">
             <Download size={13} strokeWidth={1.8} />
           </button>
-          <button
-            className="case-action-icon"
-            title="View Trace"
-            onClick={() => navigate(`/trace/${c.id}`)}
-          >
+          <button className="case-action-icon" title="View Trace" onClick={() => navigate(`/trace/${c.id}`)}>
             <ExternalLink size={13} strokeWidth={1.8} />
           </button>
         </div>
@@ -180,21 +235,17 @@ const HistoryPage = ({ darkMode, toggleDarkMode }: HistoryPageProps) => {
           <div style={{ flex: 1, height: '1px', background: 'var(--border-light)' }} />
         </div>
         <div>
-          {items.map(c => <CaseRow key={c.id} c={c} />)}
+          {items.map((c) => <CaseRow key={c.id} c={c} />)}
         </div>
       </section>
     );
   };
-
-  const isLoading = false; // flip to preview skeleton state
 
   return (
     <div className="history-page">
       <AppSidebar activeItem="archive" darkMode={darkMode} toggleDarkMode={toggleDarkMode} />
 
       <main className="history-main">
-
-        {/* ── Header ────────────────────────────────────────────────────────── */}
         <header className="history-header">
           <div className="history-header-left">
             <button className="history-back-btn" onClick={() => navigate('/workspace')}>
@@ -214,17 +265,15 @@ const HistoryPage = ({ darkMode, toggleDarkMode }: HistoryPageProps) => {
           </div>
         </header>
 
-        {/* ── KPI Strip ─────────────────────────────────────────────────────── */}
         <div className="arch-kpi-strip">
-
           <div className="arch-kpi-card arch-kpi-card--blue">
             <div className="arch-kpi-icon arch-kpi-icon--blue">
               <BarChart2 size={16} strokeWidth={1.8} />
             </div>
             <div className="arch-kpi-body">
-              <strong>247</strong>
+              <strong>{totalCases}</strong>
               <span>Total Cases</span>
-              <em className="arch-kpi-sub arch-kpi-sub--positive">+14 this month</em>
+              <em className="arch-kpi-sub arch-kpi-sub--positive">{thisMonthCases} this month</em>
             </div>
           </div>
 
@@ -233,9 +282,9 @@ const HistoryPage = ({ darkMode, toggleDarkMode }: HistoryPageProps) => {
               <TrendingUp size={16} strokeWidth={1.8} />
             </div>
             <div className="arch-kpi-body">
-              <strong>96.8%</strong>
-              <span>Avg Confidence</span>
-              <em className="arch-kpi-sub arch-kpi-sub--neutral">Model stable</em>
+              <strong>{completedCases}</strong>
+              <span>Completed Cases</span>
+              <em className="arch-kpi-sub arch-kpi-sub--neutral">Live from run history</em>
             </div>
           </div>
 
@@ -244,9 +293,9 @@ const HistoryPage = ({ darkMode, toggleDarkMode }: HistoryPageProps) => {
               <Clock size={16} strokeWidth={1.8} />
             </div>
             <div className="arch-kpi-body">
-              <strong>23</strong>
+              <strong>{thisMonthCases}</strong>
               <span>This Month</span>
-              <em className="arch-kpi-sub arch-kpi-sub--warning">7 pending review</em>
+              <em className="arch-kpi-sub arch-kpi-sub--warning">Recent activity</em>
             </div>
           </div>
 
@@ -255,15 +304,13 @@ const HistoryPage = ({ darkMode, toggleDarkMode }: HistoryPageProps) => {
               <Users size={16} strokeWidth={1.8} />
             </div>
             <div className="arch-kpi-body">
-              <strong>8</strong>
-              <span>Active Teams</span>
-              <em className="arch-kpi-sub arch-kpi-sub--neutral">5 practice areas</em>
+              <strong>{sharedCases}</strong>
+              <span>Shared Cases</span>
+              <em className="arch-kpi-sub arch-kpi-sub--neutral">Team-visible items</em>
             </div>
           </div>
-
         </div>
 
-        {/* ── Search + Sort toolbar ─────────────────────────────────────────── */}
         <div className="arch-toolbar">
           <div className="arch-search-wrap">
             <Search size={15} strokeWidth={1.8} className="arch-search-icon" />
@@ -272,7 +319,7 @@ const HistoryPage = ({ darkMode, toggleDarkMode }: HistoryPageProps) => {
               type="text"
               placeholder="Search cases, citations, or tags…"
               value={search}
-              onChange={e => setSearch(e.target.value)}
+              onChange={(e) => setSearch(e.target.value)}
             />
           </div>
           <div className="arch-sort-pills">
@@ -280,7 +327,7 @@ const HistoryPage = ({ darkMode, toggleDarkMode }: HistoryPageProps) => {
               <Filter size={12} strokeWidth={2} />
               Sort:
             </span>
-            {(['date', 'type', 'confidence', 'team'] as SortKey[]).map(k => (
+            {(['date', 'type', 'confidence', 'team'] as SortKey[]).map((k) => (
               <button
                 key={k}
                 className={`arch-sort-pill${sortKey === k ? ' arch-sort-pill--active' : ''}`}
@@ -293,17 +340,22 @@ const HistoryPage = ({ darkMode, toggleDarkMode }: HistoryPageProps) => {
           </div>
         </div>
 
-        {/* ── Archive sections ──────────────────────────────────────────────── */}
-        {isLoading ? (
+        {loading ? (
           <>
             <SkeletonRow />
             <SkeletonRow />
             <SkeletonRow />
           </>
+        ) : error ? (
+          <div className="arch-empty">
+            <Search size={30} strokeWidth={1.3} />
+            <p>{error}</p>
+          </div>
         ) : (
           <>
-            <ArchiveSection title="January 2026"  items={januaryCases} />
-            <ArchiveSection title="December 2025" items={decemberCases} />
+            {monthSections.map(([month, items]) => (
+              <ArchiveSection key={month} title={month} items={items} />
+            ))}
 
             {filtered.length === 0 && (
               <div className="arch-empty">
@@ -313,7 +365,6 @@ const HistoryPage = ({ darkMode, toggleDarkMode }: HistoryPageProps) => {
             )}
           </>
         )}
-
       </main>
     </div>
   );

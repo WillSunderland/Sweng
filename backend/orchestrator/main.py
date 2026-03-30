@@ -440,11 +440,11 @@ async def create_run(
 @app.get("/api/runs/stream")
 async def stream_run(
     query: str,
-    current_user: CurrentUser,
+    current_user: OptionalCurrentUser = None,
     priority: str | None = Query(None),
 ):
     """SSE endpoint — streams agent thought events while processing a query."""
-    user_id = get_user_id(current_user)
+    user_id = get_user_id(current_user) if current_user else "anonymous"
     return StreamingResponse(
         _stream_run_events(query, priority=priority, user_id=user_id),
         media_type="text/event-stream",

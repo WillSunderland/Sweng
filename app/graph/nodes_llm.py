@@ -63,18 +63,23 @@ async def _generate_control_json(
     *,
     fallback: dict[str, Any],
 ) -> dict[str, Any]:
-    try:
-        response = await nvidia_client.generate(
-            system_prompt,
-            user_prompt,
-            temperature=0.0,
-            max_tokens=400,
-        )
-        payload = _extract_json_payload(response.content)
-        if isinstance(payload, dict):
-            return payload
-    except Exception as exc:
-        logger.warning("Nvidia control node failed, attempting HF fallback: %s", exc)
+    if not settings.nvidia_api_key:
+        logger.info("Using heuristic control fallback (NVIDIA_API_KEY not configured)")
+        return fallback
+
+    if settings.nvidia_api_key:
+        try:
+            response = await nvidia_client.generate(
+                system_prompt,
+                user_prompt,
+                temperature=0.0,
+                max_tokens=400,
+            )
+            payload = _extract_json_payload(response.content)
+            if isinstance(payload, dict):
+                return payload
+        except Exception as exc:
+            logger.warning("Nvidia control node failed, attempting HF fallback: %s", exc)
 
     try:
         response = await hf_client.generate(
@@ -223,7 +228,9 @@ async def prefetchDecisionNode(state: GraphState) -> dict[str, Any]:
         },
     )
 
-    needs_retrieval = bool(payload.get("needs_retrieval", True))
+    model_needs_retrieval = bool(payload.get("needs_retrieval", True))
+    # Only allow retrieval to be skipped for clear chat-only follow-ups.
+    needs_retrieval = (not heuristic_skip) or model_needs_retrieval
     reason = str(payload.get("reason") or "Prefetch decision computed.").strip()
     decision = "search" if needs_retrieval else "context_only"
 
@@ -318,6 +325,10 @@ def readLoopRoute(state: GraphState) -> str:
 
 def routerNode(state: GraphState) -> dict[str, Any]:
     """Decides which LLM provider to use based on query complexity."""
+    if not settings.nvidia_api_key:
+        logger.info("Router decision: huggingface (NVIDIA_API_KEY is not configured)")
+        return {"route_decision": "huggingface"}
+
     if state.get("error"):
         logger.warning("Upstream error detected, routing to Nvidia for robust handling")
         return {"route_decision": "nvidia"}
@@ -360,6 +371,10 @@ def routerNode(state: GraphState) -> dict[str, Any]:
 
 async def nvidiaLlmNode(state: GraphState) -> dict[str, Any]:
     """Calls Nvidia LLM, falls back to HuggingFace on failure."""
+    if not settings.nvidia_api_key:
+        logger.info("Skipping Nvidia generation because NVIDIA_API_KEY is not configured")
+        return await hfLlmNode(state)
+
     query = state.get("standaloneQuery") or state.get("query", "")
     documents = [
         hit.get("_source", {})
@@ -399,6 +414,22 @@ async def hfLlmNode(state: GraphState) -> dict[str, Any]:
         hit.get("_source", {})
         for hit in (state.get("accumulatedSources") or state.get("searchResults", []))
     ]
+
+    if not documents:
+        return {
+            "llm_response": (
+                "I could not find relevant documents in the indexed legislative corpus for this query. "
+                "Try a more specific bill title, bill number, state, or policy area."
+            ),
+            "model_used": settings.hf_model,
+            "provider_used": "huggingface",
+            "token_count": 0,
+            "reasoning_steps": _reasoning_step(
+                state,
+                "answer",
+                "No retrieved documents were available, so a deterministic no-hit response was returned.",
+            ),
+        }
 
     user_prompt = build_rag_user_prompt(
         query,

@@ -6,7 +6,7 @@ export type RunStatus = 'running' | 'completed' | 'draft' | 'in-review';
 export type RunPriority = 'high' | 'medium' | 'low';
 export type SortField = 'date' | 'name' | 'priority';
 export type SortOrder = 'asc' | 'desc';
-export type FilterTab = 'all-cases' | 'drafts' | 'completed' | 'high-priority';
+export type FilterTab = 'all-cases' | 'drafts' | 'completed' | 'high-priority' | 'shared';
 
 export interface RunItem {
   runId: string;
@@ -93,6 +93,7 @@ export interface TabCounts {
   drafts: number;
   completed: number;
   'high-priority': number;
+  shared: number;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -102,6 +103,7 @@ function filterTabToParams(tab: FilterTab): { status?: string; priority?: string
     case 'drafts':        return { status: 'draft' };
     case 'completed':     return { status: 'completed' };
     case 'high-priority': return { priority: 'high' };
+    case 'shared':        return {};
     default:              return {};
   }
 }
@@ -195,6 +197,7 @@ export async function fetchTabCounts(): Promise<TabCounts> {
     'drafts':        drafts.total ?? 0,
     'completed':     completed.total ?? 0,
     'high-priority': highPriority.total ?? 0,
+    'shared': 0,
   };
 }
 

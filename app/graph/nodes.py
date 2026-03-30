@@ -126,6 +126,10 @@ def _cross_encoder_rerank(query: str, hits: list[dict[str, Any]], top_k: int) ->
     if len(hits) <= top_k:
         return hits
 
+    if not settings.nvidia_api_key:
+        # Demo fallback: avoid loading heavy reranker on CPU-only/no-key setups.
+        return hits[:top_k]
+
     try:
         model = _get_cross_encoder()
         pairs = [(query, h.get("_source", {}).get("chunk_text", "")) for h in hits]
@@ -211,7 +215,7 @@ def makeSearchNode(client: OpenSearch, index: str):
                     }
                 },
             }
-            raw = client.search(index=index, body=body)
+            raw = client.search(index=index, body=body, request_timeout=8)
             raw_hits = raw.get("hits", {}).get("hits", [])
 
             # Step 2: MMR — pick diverse candidates (fetch_k → mmr_k)

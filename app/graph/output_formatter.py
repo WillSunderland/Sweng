@@ -277,6 +277,39 @@ def llmOutputNode(state: GraphState) -> dict[str, Any]:
         }
 
     hits = state.get("accumulatedSources") or state.get("searchResults", [])
+    retrieval_skipped = not state.get("shouldFetch", True)
+
+    if not hits and not retrieval_skipped:
+        carbon_count_in_tons = estimate_carbon_tons(
+            state.get("model_used"),
+            state.get("provider_used"),
+        )
+        return {
+            "response": {
+                "answer": (
+                    "I could not find relevant documents in the indexed legislative corpus for this query. "
+                    "Try a more specific bill title, bill number, state, or policy area."
+                ),
+                "structured_answer": None,
+                "sources": [],
+                "model_used": state.get("model_used"),
+                "provider": state.get("provider_used"),
+                "carbonCountInTons": carbon_count_in_tons,
+                "token_count": state.get("token_count", 0),
+                "error": None,
+                "rewritten_query": state.get("rewrittenQuery"),
+                "plan": list(state.get("plan", [])),
+                "reasoning_steps": list(state.get("reasoning_steps", [])),
+                "retrieval_skipped": retrieval_skipped,
+                "citation_validation": {
+                    "valid_citations": [],
+                    "hallucinated_citations": [],
+                    "uncited_sources": [],
+                    "citation_accuracy": 1.0,
+                },
+            }
+        }
+
     formatted_sources = []
 
     for hit in hits:
@@ -338,7 +371,7 @@ def llmOutputNode(state: GraphState) -> dict[str, Any]:
             "rewritten_query": state.get("rewrittenQuery"),
             "plan": list(state.get("plan", [])),
             "reasoning_steps": list(state.get("reasoning_steps", [])),
-            "retrieval_skipped": not state.get("shouldFetch", True),
+            "retrieval_skipped": retrieval_skipped,
             "citation_validation": citation_validation,
         }
     }

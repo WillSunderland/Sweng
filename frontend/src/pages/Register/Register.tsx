@@ -2,6 +2,8 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import eye from "../../assets/closedEye.png";
 import eyeOff from "../../assets/openEye.png";
+import { API_BASE_URL } from "../../constants/apiConfig";
+import { setCurrentUserDisplayName } from "../../lib/userSession";
 
 export default function Register() {
   const navigate = useNavigate();
@@ -12,7 +14,7 @@ export default function Register() {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
 
-  function handleRegister(e: React.FormEvent) {
+  async function handleRegister(e: React.FormEvent) {
     e.preventDefault();
     setError("");
 
@@ -21,8 +23,24 @@ export default function Register() {
       return;
     }
 
-    console.log("Register:", { email, password });
-    navigate("/login");
+    try {
+      const registerRes = await fetch(`${API_BASE_URL}/api/auth/register`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username: email, email, password }),
+      });
+
+      if (!registerRes.ok) {
+        const msg = await registerRes.text();
+        setError(msg || "Registration failed");
+        return;
+      }
+
+      setCurrentUserDisplayName(email);
+      navigate("/login");
+    } catch {
+      setError("Registration failed. Please try again.");
+    }
   }
 
   return (

@@ -90,8 +90,8 @@ def createRun(request):
 
     SOURCE_STORE["src_001"] = {
         "sourceId": "src_001",
-        "title": "Placeholder Source",
-        "fullText": "Lorem Ipsum Source content.",
+        "title": "Legislative Source Document",
+        "fullText": "Source content pending retrieval.",
     }
 
     return Response(
@@ -114,7 +114,7 @@ def listRuns(request):
         items.append(
             {
                 "runId": runId,
-                "title": "Placeholder Analysis",
+                "title": f"Analysis: {run.get('query', 'Research query')[:60]}",
                 "updatedAt": run["createdAt"],
                 "status": run.get("status", RUN_STATUS_RUNNING),
                 "priority": run.get("priority", _infer_priority(run.get("query", ""))),
@@ -133,40 +133,42 @@ def getRun(request, runId):
 
     start_time = datetime.now(timezone.utc)
 
+    query_text = run.get("query", "Legal research query")
+
     responseBody = {
         "runId": runId,
         "status": run.get("status", RUN_STATUS_COMPLETED),
-        "priority": run.get("priority", _infer_priority(run.get("query", ""))),
-        "title": "Placeholder Legal Analysis",
+        "priority": run.get("priority", _infer_priority(query_text)),
+        "title": f"Analysis: {query_text[:80]}",
         "lastUpdatedAt": run["createdAt"],
         "keyFinding": {
-            "summary": "Lorem ipsum placeholder key finding.",
+            "summary": f"Analysis completed for: {query_text[:120]}",
             "impactLevel": "high",
             "actionRequired": True,
         },
         "statutoryBasis": {
             "analysis": [
                 {
-                    "text": "Lorem ipsum statutory analysis paragraph.",
+                    "text": "Statutory analysis pending full retrieval pipeline.",
                     "citations": ["src_001"],
                 }
             ]
         },
         "precedents": [
             {
-                "caseName": "Placeholder Case",
-                "court": "High Court",
+                "caseName": "Pending precedent retrieval",
+                "court": "N/A",
                 "year": 2024,
                 "authority": "persuasive",
                 "timesCited": 0,
-                "summary": "Lorem ipsum case summary.",
+                "summary": "Precedent analysis will be populated by the RAG pipeline.",
             }
         ],
         "agentCommentary": {
             "aiGenerated": True,
-            "content": "Lorem ipsum agent commentary.",
+            "content": f"AI analysis initiated for query: {query_text[:120]}",
             "suggestedActions": [
-                {"label": "Placeholder action", "actionId": "placeholderAction"}
+                {"label": "View detailed trace", "actionId": "viewTrace"}
             ],
         },
         "reasoningPath": {

@@ -1,16 +1,49 @@
 import { useNavigate, useParams } from 'react-router-dom';
+import { useEffect, useState } from 'react';
 import AppSidebar from '../../components/AppSidebar/AppSidebar';
 import '../../components/AppSidebar/SharedSidebar.css';
 import './ReportViewPage.css';
+import { isRunShared, toggleRunShared } from '../../lib/sharedRuns';
+import { API_BASE_URL } from '../../constants/apiConfig';
 
 interface ReportViewPageProps {
   darkMode?: boolean;
   toggleDarkMode?: () => void;
 }
 
+interface RunData {
+  runId: string;
+  title: string;
+  status: string;
+  priority: string;
+  keyFinding?: { summary: string; impactLevel: string; actionRequired: boolean };
+  statutoryBasis?: { analysis: { text: string; citations: string[] }[] };
+  precedents?: { caseName: string; court: string; year: number; summary: string }[];
+  agentCommentary?: { content: string };
+  reasoningPath?: { trustScore: number; carbonTotalG: number; steps: { label: string; status: string }[] };
+}
+
 const ReportViewPage: React.FC<ReportViewPageProps> = ({ darkMode, toggleDarkMode }) => {
   const navigate = useNavigate();
   const { id } = useParams();
+  const [run, setRun] = useState<RunData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [isShared, setIsShared] = useState(false);
+
+  useEffect(() => {
+    const token = localStorage.getItem('token');
+    fetch(`${API_BASE_URL}/api/runs/${id}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => { if (data) setRun(data); })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [id]);
+
+  useEffect(() => {
+    if (id) setIsShared(isRunShared(id));
+  }, [id]);
 
   const handleBack = () => {
     if (window.history.length > 1) {
@@ -18,6 +51,26 @@ const ReportViewPage: React.FC<ReportViewPageProps> = ({ darkMode, toggleDarkMod
       return;
     }
     navigate('/workspace');
+  };
+
+  const trustScore = run?.reasoningPath?.trustScore ?? 0;
+  const carbonG = run?.reasoningPath?.carbonTotalG ?? 0;
+  const steps = run?.reasoningPath?.steps ?? [];
+
+  const exportReportJson = () => {
+    if (!run) return;
+    const blob = new Blob([JSON.stringify(run, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `report-${run.runId}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const toggleShared = () => {
+    if (!id) return;
+    setIsShared(toggleRunShared(id));
   };
 
   return (
@@ -39,92 +92,90 @@ const ReportViewPage: React.FC<ReportViewPageProps> = ({ darkMode, toggleDarkMod
           </nav>
         </header>
 
-        <section className="report-kpis">
-          <article className="report-kpi-card">
-            <span>Risk Level</span>
-            <strong>Moderate-High</strong>
-            <p>Immediate legal review recommended</p>
-          </article>
-          <article className="report-kpi-card">
-            <span>Sources Reviewed</span>
-            <strong>847</strong>
-            <p>Statute, case law, and policy records</p>
-          </article>
-          <article className="report-kpi-card">
-            <span>Confidence</span>
-            <strong>98.4%</strong>
-            <p>High reliability synthesis</p>
-          </article>
-        </section>
+        {loading ? (
+          <p style={{ padding: '2rem', color: 'var(--text-muted)' }}>Loading report data...</p>
+        ) : !run ? (
+          <p style={{ padding: '2rem', color: 'var(--text-muted)' }}>
+            No report found for this ID. <button onClick={() => navigate('/workspace')} style={{ color: '#2563eb', textDecoration: 'underline', background: 'none', border: 'none', cursor: 'pointer' }}>Return to Workspace</button>
+          </p>
+        ) : (
+          <>
+            <section className="report-kpis">
+              <article className="report-kpi-card">
+                <span>Priority</span>
+                <strong style={{ textTransform: 'capitalize' }}>{run.priority}</strong>
+                <p>{run.keyFinding?.actionRequired ? 'Action required' : 'For review'}</p>
+              </article>
+              <article className="report-kpi-card">
+                <span>Status</span>
+                <strong style={{ textTransform: 'capitalize' }}>{run.status}</strong>
+                <p>{steps.length} analysis step{steps.length !== 1 ? 's' : ''} completed</p>
+              </article>
+              <article className="report-kpi-card">
+                <span>Trust Score</span>
+                <strong>{(trustScore * 100).toFixed(1)}%</strong>
+                <p>AI confidence rating</p>
+              </article>
+            </section>
 
-        <h1>Legal Research Report: IP Infringement Risk</h1>
+            <h1>{run.title}</h1>
 
-        <section id="summary" className="report-section">
-          <h2>Executive Summary</h2>
-          <p>Based on comprehensive analysis, there is a <strong>moderate-to-high risk</strong> of patent infringement regarding our AI ML Platform software.</p>
-        </section>
+            <section id="summary" className="report-section">
+              <h2>Executive Summary</h2>
+              <p>{run.keyFinding?.summary ?? 'No key findings available yet.'}</p>
+            </section>
 
-        <section id="statutory" className="report-section">
-          <h2>Statutory Basis</h2>
-          <div className="info-box">
-            <span className="badge">OFFICIAL SOURCE</span>
-            <p>...</p>
-          </div>
-        </section>
+            <section id="statutory" className="report-section">
+              <h2>Statutory Basis</h2>
+              {run.statutoryBasis?.analysis?.map((a, i) => (
+                <div className="info-box" key={i}>
+                  <span className="badge">OFFICIAL SOURCE</span>
+                  <p>{a.text}</p>
+                </div>
+              )) ?? <p>No statutory analysis available.</p>}
+            </section>
 
-        <section id="precedent" className="report-section">
-          <h2>Precedents</h2>
-          <div className="info-box">
-            <span className="badge">CASE LAW</span>
-            <p>Doyle v. Residential Tenancies Board supports a restrictive reading where broad software licensing may trigger infringement concerns.</p>
-          </div>
-        </section>
+            <section id="precedent" className="report-section">
+              <h2>Precedents</h2>
+              {run.precedents?.map((p, i) => (
+                <div className="info-box" key={i}>
+                  <span className="badge">CASE LAW</span>
+                  <p><strong>{p.caseName}</strong> ({p.court}, {p.year}) — {p.summary}</p>
+                </div>
+              )) ?? <p>No precedents found.</p>}
+            </section>
 
-        <section id="reasoning" className="report-section">
-          <h2>AI Reasoning Path</h2>
-          <p>The AI analyzed 847 documents across 4 execution steps.</p>
-          <button className="report-primary-btn" onClick={() => navigate(`/trace/${id}`)}>
-            View Full Trace →
-          </button>
-        </section>
+            <section id="reasoning" className="report-section">
+              <h2>AI Reasoning Path</h2>
+              <p>{run.agentCommentary?.content ?? 'No AI commentary available.'}</p>
+              <button className="report-primary-btn" onClick={() => navigate(`/trace/${id}`)}>
+                View Full Trace →
+              </button>
+            </section>
+          </>
+        )}
       </main>
 
       <aside className="report-right-sidebar">
         <div className="metric-box highlight">
-          <h4>Confidence</h4>
-          <div className="confidence">98.4%</div>
+          <h4>Trust Score</h4>
+          <div className="confidence">{run ? `${(trustScore * 100).toFixed(1)}%` : '—'}</div>
           <p>Validated against primary legislative sources.</p>
         </div>
 
         <div className="metric-box">
           <h4>Quick Actions</h4>
-          <button className="report-side-btn">Export PDF</button>
-          <button className="report-side-btn">Share to Team</button>
           <button className="report-side-btn" onClick={() => navigate(`/trace/${id}`)}>Open Execution Trace</button>
-        </div>
-
-        <div className="metric-box">
-          <h4>Source Coverage</h4>
-          <ul className="report-side-list">
-            <li><span>Statutory Sources</span><strong>512</strong></li>
-            <li><span>Precedent Cases</span><strong>221</strong></li>
-            <li><span>Secondary Notes</span><strong>114</strong></li>
-          </ul>
-        </div>
-
-        <div className="metric-box">
-          <h4>Risk Snapshot</h4>
-          <ul className="report-side-list risk">
-            <li>License scope ambiguity detected</li>
-            <li>Comparable precedent indicates heightened exposure</li>
-            <li>Action required prior to external release</li>
-          </ul>
+          <button className="report-side-btn" onClick={exportReportJson}>Export Report (JSON)</button>
+          <button className="report-side-btn" onClick={toggleShared}>
+            {isShared ? 'Remove from Team Share' : 'Share with Team'}
+          </button>
+          <button className="report-side-btn" onClick={() => window.print()}>Export PDF (Print)</button>
         </div>
 
         <div className="metric-box">
           <h4>Sustainability</h4>
-          <p className="impact-value">0.168g CO₂</p>
-          <span className="change">↓42% vs baseline</span>
+          <p className="impact-value">{carbonG.toFixed(3)}g CO₂</p>
         </div>
       </aside>
     </div>

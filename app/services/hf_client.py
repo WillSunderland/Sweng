@@ -41,7 +41,6 @@ class HuggingFaceLLMClient(BaseLLMClient):
             "params": {
                 "max_new_tokens": max_tokens,
                 "temperature": temperature,
-                "manual_seed": 42,
             },
         }
 

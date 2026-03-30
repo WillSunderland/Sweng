@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import eye from "../../assets/closedEye.png";
 import eyeOff from "../../assets/openEye.png";
 import { API_BASE_URL } from "../../constants/apiConfig";
+import { hydrateCurrentUserDisplayName, setCurrentUserDisplayName } from "../../lib/userSession";
 
 export default function Login() {
   const navigate = useNavigate();
@@ -30,6 +31,8 @@ export default function Login() {
       if (token) {
         localStorage.setItem("token", token);
       }
+      setCurrentUserDisplayName(email);
+      await hydrateCurrentUserDisplayName();
       navigate("/workspace");
     } catch {
       setError("Email or password incorrect");
@@ -60,7 +63,13 @@ export default function Login() {
           <div>
             <div className="flex justify-between text-sm text-gray-600">
               <label className="font-medium">PASSWORD</label>
-              <span className="text-blue-600 cursor-pointer hover:underline">Forgot Password?</span>
+              <button
+                type="button"
+                className="text-blue-600 cursor-pointer hover:underline"
+                onClick={() => navigate('/forgot-password')}
+              >
+                Forgot Password?
+              </button>
             </div>
 
             <div className="relative">

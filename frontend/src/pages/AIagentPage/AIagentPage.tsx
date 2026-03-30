@@ -2,8 +2,9 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useNavigate, NavLink } from 'react-router-dom';
 import propylonLogo from '../../assets/propylon_logo.svg';
 import './AIagentPage.css';
-import { Brain, Search, BookOpen, CheckCircle2, Leaf, Paperclip, Cpu, Sparkles, AlertCircle } from 'lucide-react';
+import { Brain, Search, BookOpen, CheckCircle2, Leaf, Paperclip, Cpu, Sparkles, AlertCircle, ImagePlus, Mic, MicOff, Settings2 } from 'lucide-react';
 import { API_BASE_URL, POLL_INTERVAL_MS, POLL_TIMEOUT_MS, buildAuthHeaders, getAuthToken } from '../../constants/apiConfig';
+import { getCurrentUserAvatarSeed, getCurrentUserDisplayName, hydrateCurrentUserDisplayName } from '../../lib/userSession';
 
 import ThemeToggle from '../../components/ThemeToggle/ThemeToggle';
 
@@ -133,8 +134,23 @@ interface AgentEvent {
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
-const BASE_URL = 'http://localhost:8000';
+const BASE_URL = API_BASE_URL || 'http://localhost:8000';
 const STREAM_TIMEOUT_MS = 90_000;
+
+interface VoiceRecognitionEvent {
+  results: ArrayLike<ArrayLike<{ transcript: string }>>;
+}
+
+type VoiceRecognition = {
+  lang: string;
+  interimResults: boolean;
+  maxAlternatives: number;
+  start: () => void;
+  stop: () => void;
+  onresult: ((event: VoiceRecognitionEvent) => void) | null;
+  onerror: ((event: { error: string }) => void) | null;
+  onend: (() => void) | null;
+};
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -973,6 +989,7 @@ const ReasoningPanel: React.FC<{
 
 const AIagentPage: React.FC<{ darkMode?: boolean; toggleDarkMode?: () => void }> = ({ darkMode, toggleDarkMode }) => {
   const navigate = useNavigate();
+  const [userName, setUserName] = useState(getCurrentUserDisplayName());
 
   const [messages, setMessages] = useState<Message[]>([
     {
@@ -984,6 +1001,9 @@ const AIagentPage: React.FC<{ darkMode?: boolean; toggleDarkMode?: () => void }>
   ]);
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
+  const [showSettingsMenu, setShowSettingsMenu] = useState(false);
+  const [attachments, setAttachments] = useState<File[]>([]);
+  const [isListening, setIsListening] = useState(false);
 
   // SSE streaming state
   const { currentEvent, events, isStreaming, startStream, reset: resetStream } = useAgentStream();
@@ -1011,6 +1031,22 @@ const AIagentPage: React.FC<{ darkMode?: boolean; toggleDarkMode?: () => void }>
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const attachInputRef = useRef<HTMLInputElement>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
+  const recognitionRef = useRef<VoiceRecognition | null>(null);
+
+  useEffect(() => {
+    setUserName(getCurrentUserDisplayName());
+    hydrateCurrentUserDisplayName().then(() => {
+      setUserName(getCurrentUserDisplayName());
+    }).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      recognitionRef.current?.stop();
+    };
+  }, []);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -1029,13 +1065,92 @@ const AIagentPage: React.FC<{ darkMode?: boolean; toggleDarkMode?: () => void }>
     setPreviewLoading(false);
   }, []);
 
+  const handleFileSelection = useCallback((fileList: FileList | null) => {
+    if (!fileList || fileList.length === 0) return;
+    const incoming = Array.from(fileList);
+    setAttachments((prev) => [...prev, ...incoming]);
+  }, []);
+
+  const removeAttachment = useCallback((index: number) => {
+    setAttachments((prev) => prev.filter((_, i) => i !== index));
+  }, []);
+
+  const startVoiceInput = useCallback(() => {
+    const SpeechRecognitionCtor =
+      (window as unknown as { SpeechRecognition?: new () => VoiceRecognition; webkitSpeechRecognition?: new () => VoiceRecognition }).SpeechRecognition
+      ?? (window as unknown as { webkitSpeechRecognition?: new () => VoiceRecognition }).webkitSpeechRecognition;
+
+    if (!SpeechRecognitionCtor) {
+      setMessages((prev) => [
+        ...prev,
+        { id: Date.now(), type: 'error', text: '⚠ Voice input is not supported in this browser.', time: nowStr() },
+      ]);
+      return;
+    }
+
+    if (isListening) {
+      recognitionRef.current?.stop();
+      setIsListening(false);
+      return;
+    }
+
+    const recognition = new SpeechRecognitionCtor();
+    recognition.lang = 'en-US';
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 1;
+
+    recognition.onresult = (event) => {
+      const transcript = event.results?.[0]?.[0]?.transcript?.trim();
+      if (transcript) {
+        setInput((prev) => `${prev}${prev ? ' ' : ''}${transcript}`);
+      }
+    };
+
+    recognition.onerror = () => {
+      setIsListening(false);
+    };
+
+    recognition.onend = () => {
+      setIsListening(false);
+    };
+
+    recognitionRef.current = recognition;
+    setIsListening(true);
+    recognition.start();
+  }, [isListening]);
+
+  const resetConversation = useCallback(() => {
+    setMessages([
+      {
+        id: Date.now(),
+        type: 'assistant',
+        text: "Hello, I'm your AI Legal Assistant. How can I help you today?",
+        time: nowStr(),
+      },
+    ]);
+    setInput('');
+    setAttachments([]);
+    setPreviewCitation(null);
+    setShowSettingsMenu(false);
+  }, []);
+
   const handleSend = useCallback(async (text?: string): Promise<void> => {
     const messageText = (text ?? input).trim();
-    if (!messageText || isTyping) return;
+    if ((!messageText && attachments.length === 0) || isTyping) return;
+
+    const attachmentText = attachments.length > 0
+      ? `\n\nAttached files: ${attachments.map((file) => file.name).join(', ')}`
+      : '';
+    const fullPrompt = `${messageText || 'Please analyse the attached files.'}${attachmentText}`;
 
     setMessages((prev) => [
       ...prev,
-      { id: Date.now(), type: 'user', text: messageText, time: nowStr() },
+      {
+        id: Date.now(),
+        type: 'user',
+        text: messageText || `Attached ${attachments.length} file${attachments.length > 1 ? 's' : ''}`,
+        time: nowStr(),
+      },
     ]);
     setInput('');
     setIsTyping(true);
@@ -1047,7 +1162,7 @@ const AIagentPage: React.FC<{ darkMode?: boolean; toggleDarkMode?: () => void }>
 
       try {
         // Primary path: SSE streaming for real-time thought visualisation
-        const result = await startStream(messageText);
+        const result = await startStream(fullPrompt);
         runId = result.runId;
         capturedStreamEvents = result.capturedEvents.filter(
           (e) => !['init', 'error'].includes(e.event)
@@ -1055,12 +1170,12 @@ const AIagentPage: React.FC<{ darkMode?: boolean; toggleDarkMode?: () => void }>
       } catch {
         // Graceful fallback to standard polling if streaming is unavailable
         resetStream();
-        runId = await createRun(messageText);
+        runId = await createRun(fullPrompt);
       }
 
       const run = await pollRun(runId);
       const parsed = await parseResponse(run);
-      const routedTo = guessRoute(messageText, run);
+      const routedTo = guessRoute(fullPrompt, run);
 
       // Extract green metrics from backend reasoningPath (polling fallback)
       const metrics: GreenMetrics = {
@@ -1101,8 +1216,18 @@ const AIagentPage: React.FC<{ darkMode?: boolean; toggleDarkMode?: () => void }>
     } finally {
       setIsTyping(false);
       resetStream();
+      setAttachments([]);
     }
-  }, [input, isTyping, startStream, resetStream]);
+  }, [input, isTyping, startStream, resetStream, attachments]);
+
+  const handleStop = useCallback(() => {
+    resetStream();
+    setIsTyping(false);
+    setMessages((prev) => [
+      ...prev,
+      { id: Date.now(), type: 'error', text: '⚠ Generation stopped by user.', time: nowStr() },
+    ]);
+  }, [resetStream]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>): void => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -1141,21 +1266,21 @@ const AIagentPage: React.FC<{ darkMode?: boolean; toggleDarkMode?: () => void }>
                 </svg>
                 <span>Workspace</span>
               </NavLink>
-              <div className="sidebar-nav-item">
+              <button className="sidebar-nav-item" onClick={() => navigate('/workspace?view=drafts')}>
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
                   <polyline points="14 2 14 8 20 8" />
                 </svg>
                 <span>Drafts</span>
-              </div>
-              <div className="sidebar-nav-item">
+              </button>
+              <button className="sidebar-nav-item" onClick={() => navigate('/workspace?view=shared')}>
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
                   <circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" />
                   <path d="M16 3.13a4 4 0 0 1 0 7.75" />
                 </svg>
                 <span>Shared with Team</span>
-              </div>
+              </button>
               <NavLink to="/history" className={({ isActive }) => `sidebar-nav-item${isActive ? ' active' : ''}`}>
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M21 8v13H3V8" /><path d="M1 3h22v5H1z" />
@@ -1201,11 +1326,14 @@ const AIagentPage: React.FC<{ darkMode?: boolean; toggleDarkMode?: () => void }>
           )}
           <div className="sidebar-user">
             <div className="sidebar-user-avatar">
-              <img src="https://api.dicebear.com/7.x/avataaars/svg?seed=James&backgroundColor=b6e3f4" alt="JS" />
+              <img
+                src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(getCurrentUserAvatarSeed())}&backgroundColor=b6e3f4`}
+                alt={userName}
+              />
             </div>
             <div className="sidebar-user-info">
-              <span className="sidebar-user-name">James Sterling</span>
-              <span className="sidebar-user-role">Senior Counsel</span>
+              <span className="sidebar-user-name">{userName}</span>
+              <span className="sidebar-user-role">Legal Professional</span>
             </div>
           </div>
         </div>
@@ -1213,6 +1341,28 @@ const AIagentPage: React.FC<{ darkMode?: boolean; toggleDarkMode?: () => void }>
 
       {/* ─── Main Content ──────────────────────────────────────────────── */}
       <div className="ai-main-content">
+        <input
+          ref={attachInputRef}
+          type="file"
+          multiple
+          accept=".pdf,.doc,.docx,.txt,.md,.rtf"
+          style={{ display: 'none' }}
+          onChange={(e) => {
+            handleFileSelection(e.target.files);
+            e.currentTarget.value = '';
+          }}
+        />
+        <input
+          ref={imageInputRef}
+          type="file"
+          multiple
+          accept="image/*"
+          style={{ display: 'none' }}
+          onChange={(e) => {
+            handleFileSelection(e.target.files);
+            e.currentTarget.value = '';
+          }}
+        />
         {hasStartedChat && (
           <header className="chat-header-bar">
             <div className="chat-header-left">
@@ -1247,13 +1397,40 @@ const AIagentPage: React.FC<{ darkMode?: boolean; toggleDarkMode?: () => void }>
                 </svg>
                 <span>Net Zero Badge</span>
               </div>
+              <div style={{ position: 'relative' }}>
+                <button
+                  className="input-tool-btn"
+                  onClick={() => setShowSettingsMenu((prev) => !prev)}
+                  aria-label="AI settings"
+                  title="AI settings"
+                >
+                  <Settings2 size={14} />
+                </button>
+                {showSettingsMenu && (
+                  <div className="settings-menu-panel">
+                    <button type="button" onClick={resetConversation}>New conversation</button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSessionMetrics({ totalCarbonG: 0, totalTokens: 0, queryCount: 0 });
+                        setShowSettingsMenu(false);
+                      }}
+                    >
+                      Clear session metrics
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setRightPanelOpen((prev) => !prev);
+                        setShowSettingsMenu(false);
+                      }}
+                    >
+                      {rightPanelOpen ? 'Hide reasoning panel' : 'Show reasoning panel'}
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
-            <button className="chat-header-settings" title="Settings">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="12" cy="12" r="3" />
-                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
-              </svg>
-            </button>
           </header>
         )}
 
@@ -1387,6 +1564,21 @@ const AIagentPage: React.FC<{ darkMode?: boolean; toggleDarkMode?: () => void }>
                 {/* Input Bar (chat state) */}
                 <div className="input-area">
                   <div className="input-wrapper">
+                    {attachments.length > 0 && (
+                      <div className="attachments-row">
+                        {attachments.map((file, index) => (
+                          <button
+                            key={`${file.name}-${index}`}
+                            type="button"
+                            className="attachment-chip"
+                            onClick={() => removeAttachment(index)}
+                            title="Remove attachment"
+                          >
+                            {file.name} ×
+                          </button>
+                        ))}
+                      </div>
+                    )}
                     <textarea
                       ref={inputRef}
                       className="message-input"
@@ -1397,25 +1589,30 @@ const AIagentPage: React.FC<{ darkMode?: boolean; toggleDarkMode?: () => void }>
                       disabled={isTyping}
                       rows={1}
                     />
-                    <button
-                      className={`send-btn ${input.trim() && !isTyping ? 'active' : ''}`}
-                      onClick={() => handleSend()}
-                      disabled={!input.trim() || isTyping}
-                      aria-label="Send message"
-                    >
-                      {isTyping ? (
+                    {isTyping ? (
+                      <button
+                        className="send-btn active"
+                        onClick={handleStop}
+                        aria-label="Stop generation"
+                      >
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
                           <circle cx="12" cy="12" r="9" />
-                          <line x1="9" y1="9" x2="15" y2="9" />
-                          <line x1="9" y1="15" x2="15" y2="15" />
+                          <rect x="9" y="9" width="6" height="6" fill="currentColor" stroke="none" rx="1" />
                         </svg>
-                      ) : (
+                      </button>
+                    ) : (
+                      <button
+                        className={`send-btn ${input.trim() || attachments.length > 0 ? 'active' : ''}`}
+                        onClick={() => handleSend()}
+                        disabled={!input.trim() && attachments.length === 0}
+                        aria-label="Send message"
+                      >
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                           <line x1="22" y1="2" x2="11" y2="13" />
                           <polygon points="22 2 15 22 11 13 2 9 22 2" />
                         </svg>
-                      )}
-                    </button>
+                      </button>
+                    )}
                   </div>
                   <div className="input-bottom-row">
                     <div className="input-tools">
@@ -1425,20 +1622,29 @@ const AIagentPage: React.FC<{ darkMode?: boolean; toggleDarkMode?: () => void }>
                         </svg>
                         GPT-4 LEGAL MODEL ACTIVE
                       </div>
-                      <button className="input-tool-btn" title="Attach file" aria-label="Attach file">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                          <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
-                        </svg>
+                      <button
+                        className="input-tool-btn"
+                        title="Attach file"
+                        aria-label="Attach file"
+                        onClick={() => attachInputRef.current?.click()}
+                      >
+                        <Paperclip size={16} />
                       </button>
-                      <button className="input-tool-btn" title="Upload image" aria-label="Upload image">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                          <rect x="3" y="3" width="18" height="18" rx="2" ry="2" /><circle cx="8.5" cy="8.5" r="1.5" /><polyline points="21 15 16 10 5 21" />
-                        </svg>
+                      <button
+                        className="input-tool-btn"
+                        title="Upload image"
+                        aria-label="Upload image"
+                        onClick={() => imageInputRef.current?.click()}
+                      >
+                        <ImagePlus size={16} />
                       </button>
-                      <button className="input-tool-btn" title="Voice input" aria-label="Voice input">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                          <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" /><path d="M19 10v2a7 7 0 0 1-14 0v-2" /><line x1="12" y1="19" x2="12" y2="23" /><line x1="8" y1="23" x2="16" y2="23" />
-                        </svg>
+                      <button
+                        className={`input-tool-btn${isListening ? ' active' : ''}`}
+                        title="Voice input"
+                        aria-label="Voice input"
+                        onClick={startVoiceInput}
+                      >
+                        {isListening ? <MicOff size={16} /> : <Mic size={16} />}
                       </button>
                     </div>
                   </div>
@@ -1459,7 +1665,7 @@ const AIagentPage: React.FC<{ darkMode?: boolean; toggleDarkMode?: () => void }>
                       <path d="M12 13v9" />
                     </svg>
                   </div>
-                  <h1 className="welcome-title">Hi James, Where should we start?</h1>
+                  <h1 className="welcome-title">Hi {userName}, where should we start?</h1>
                   <p className="welcome-subtitle">Select a task or type a query to begin your legal research.</p>
                 </div>
 
@@ -1487,6 +1693,21 @@ const AIagentPage: React.FC<{ darkMode?: boolean; toggleDarkMode?: () => void }>
             {!hasStartedChat && (
               <div className="input-area">
                 <div className="input-wrapper">
+                  {attachments.length > 0 && (
+                    <div className="attachments-row">
+                      {attachments.map((file, index) => (
+                        <button
+                          key={`${file.name}-${index}`}
+                          type="button"
+                          className="attachment-chip"
+                          onClick={() => removeAttachment(index)}
+                          title="Remove attachment"
+                        >
+                          {file.name} ×
+                        </button>
+                      ))}
+                    </div>
+                  )}
                   <textarea
                     ref={inputRef}
                     className="message-input"
@@ -1498,9 +1719,9 @@ const AIagentPage: React.FC<{ darkMode?: boolean; toggleDarkMode?: () => void }>
                     rows={1}
                   />
                   <button
-                    className={`send-btn ${input.trim() && !isTyping ? 'active' : ''}`}
+                    className={`send-btn ${(input.trim() || attachments.length > 0) && !isTyping ? 'active' : ''}`}
                     onClick={() => handleSend()}
-                    disabled={!input.trim() || isTyping}
+                    disabled={(!input.trim() && attachments.length === 0) || isTyping}
                     aria-label="Send message"
                   >
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -1517,20 +1738,29 @@ const AIagentPage: React.FC<{ darkMode?: boolean; toggleDarkMode?: () => void }>
                       </svg>
                       GPT-4 LEGAL MODEL ACTIVE
                     </div>
-                    <button className="input-tool-btn" title="Attach file" aria-label="Attach file">
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
-                      </svg>
+                    <button
+                      className="input-tool-btn"
+                      title="Attach file"
+                      aria-label="Attach file"
+                      onClick={() => attachInputRef.current?.click()}
+                    >
+                      <Paperclip size={16} />
                     </button>
-                    <button className="input-tool-btn" title="Upload image" aria-label="Upload image">
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <rect x="3" y="3" width="18" height="18" rx="2" ry="2" /><circle cx="8.5" cy="8.5" r="1.5" /><polyline points="21 15 16 10 5 21" />
-                      </svg>
+                    <button
+                      className="input-tool-btn"
+                      title="Upload image"
+                      aria-label="Upload image"
+                      onClick={() => imageInputRef.current?.click()}
+                    >
+                      <ImagePlus size={16} />
                     </button>
-                    <button className="input-tool-btn" title="Voice input" aria-label="Voice input">
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" /><path d="M19 10v2a7 7 0 0 1-14 0v-2" /><line x1="12" y1="19" x2="12" y2="23" /><line x1="8" y1="23" x2="16" y2="23" />
-                      </svg>
+                    <button
+                      className={`input-tool-btn${isListening ? ' active' : ''}`}
+                      title="Voice input"
+                      aria-label="Voice input"
+                      onClick={startVoiceInput}
+                    >
+                      {isListening ? <MicOff size={16} /> : <Mic size={16} />}
                     </button>
                   </div>
                 </div>

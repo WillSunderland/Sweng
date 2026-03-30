@@ -43,13 +43,13 @@ class SearchResult(BaseModel):
 
 
 class SourceInfo(BaseModel):
-    title: str
+    title: str = ""
     source_id: str = ""
     bill_id: str = ""
-    chunk_id: str = ""
+    chunk_id: str | int = ""
     state: str = ""
     bill_type: str = ""
-    bill_number: str = ""
+    bill_number: str | int = ""
     session: str = ""
     policy_area: str = ""
     source_file: str = ""

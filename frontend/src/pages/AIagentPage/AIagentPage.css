@@ -423,6 +423,53 @@
 }
 .input-wrapper:focus-within { border-color: var(--accent-blue); box-shadow: 0 0 0 3px rgba(37,99,235,0.1); }
 
+.attachments-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-right: 6px;
+}
+
+.attachment-chip {
+  border: 1px solid var(--border-light);
+  background: var(--bg-secondary);
+  color: var(--text-body);
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.settings-menu-panel {
+  position: absolute;
+  right: 0;
+  top: 36px;
+  width: 220px;
+  background: var(--bg);
+  border: 1px solid var(--border-light);
+  border-radius: 10px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.15);
+  padding: 6px;
+  z-index: 30;
+}
+
+.settings-menu-panel button {
+  width: 100%;
+  text-align: left;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.settings-menu-panel button:hover {
+  background: var(--bg-light);
+}
+
 .message-input {
   flex: 1; border: none; outline: none;
   font-size: 13px; color: var(--text);
@@ -1952,6 +1999,10 @@
   color: var(--text-muted); cursor: pointer; transition: all 0.15s;
 }
 .input-tool-btn:hover { background: var(--bg-secondary); color: var(--text); }
+.input-tool-btn.active {
+  background: color-mix(in srgb, var(--accent-blue) 16%, transparent);
+  color: var(--accent-blue);
+}
 
 .model-indicator {
   display: flex; align-items: center; gap: 6px;

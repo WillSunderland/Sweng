@@ -31,7 +31,7 @@ const AboutPage = () => {
           </div>
           <div className="mission-card">
             <h3>Trust & Accuracy</h3>
-            <p>96.8% average confidence across all research queries.</p>
+            <p>High-confidence results validated against primary legislative sources.</p>
           </div>
           <div className="mission-card">
             <h3>Sustainable AI</h3>
@@ -45,23 +45,23 @@ const AboutPage = () => {
         <div className="team-grid">
           <div className="team-card">
             <div className="avatar">SC</div>
-            <h3>Member 1</h3>
+            <h3>Sean Collins</h3>
             <p>Project Lead</p>
           </div>
           <div className="team-card">
             <div className="avatar">MO</div>
-            <h3>Member 2</h3>
+            <h3>Mark O'Brien</h3>
             <p>Backend Lead</p>
           </div>
           <div className="team-card">
             <div className="avatar">ER</div>
-            <h3>Member 3</h3>
-            <p> Frontend Lead</p>
+            <h3>Emma Ryan</h3>
+            <p>Frontend Lead</p>
           </div>
           <div className="team-card">
             <div className="avatar">JP</div>
-            <h3>Member 4</h3>
-            <p> UI/UX Designer</p>
+            <h3>James Power</h3>
+            <p>UI/UX Designer</p>
           </div>
         </div>
       </section>

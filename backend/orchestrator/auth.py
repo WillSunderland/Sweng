@@ -81,7 +81,7 @@ def get_optional_user(
     token_access: Optional[str] = Cookie(default=None),
     token_query: Optional[str] = Query(default=None, alias="token"),
 ) -> Optional[dict]:
-    """Return decoded JWT payload if present; otherwise None."""
+    """Return decoded JWT payload if present and valid; otherwise None."""
     token = None
 
     if credentials:
@@ -94,13 +94,14 @@ def get_optional_user(
     if not token:
         return None
 
-    payload = _decode_token(token)
+    try:
+        payload = _decode_token(token)
+    except HTTPException:
+        # Token is expired or invalid — treat as unauthenticated for optional auth
+        return None
 
     if payload.get("token_type") != "access":
-        raise HTTPException(
-            status_code=401,
-            detail="Invalid token type. Use an access token.",
-        )
+        return None
 
     return payload
 

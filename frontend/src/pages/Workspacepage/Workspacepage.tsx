@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Bell, Settings, TrendingUp, CheckCircle2, RefreshCw, FileText,
   Leaf, Hash, Clock, ChevronRight, Activity,
@@ -25,6 +25,7 @@ import {
   type AiEfficiencyResponse,
   type TabCounts,
 } from './workspaceService';
+import { getSharedRunIds, isRunShared, toggleRunShared } from '../../lib/sharedRuns';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -283,6 +284,7 @@ const CaseDetailModal: React.FC<{
 
 const WorkspacePage: React.FC<WorkspacePageProps> = ({ darkMode, toggleDarkMode }) => {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
 
   // ── Cases state ──
   const [cases, setCases] = useState<RunItem[]>([]);
@@ -315,6 +317,7 @@ const WorkspacePage: React.FC<WorkspacePageProps> = ({ darkMode, toggleDarkMode 
   const [creating, setCreating] = useState(false);
   const [detailItem, setDetailItem] = useState<RunItem | null>(null);
   const [saving, setSaving] = useState(false);
+  const [refreshSharedKey, setRefreshSharedKey] = useState(0);
 
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -328,31 +331,63 @@ const WorkspacePage: React.FC<WorkspacePageProps> = ({ darkMode, toggleDarkMode 
     return () => { if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current); };
   }, [searchQuery]);
 
+  useEffect(() => {
+    const view = searchParams.get('view');
+    if (view === 'drafts') {
+      setActiveFilter('drafts');
+    } else if (view === 'shared') {
+      setActiveFilter('shared');
+    }
+  }, [searchParams]);
+
   // ── Fetch cases ──
   const loadCases = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const [data, counts] = await Promise.all([
-        fetchRuns({
-          page: currentPage,
-          limit: 10,
-          tab: activeFilter,
-          sort: sortField,
-          q: debouncedSearch || undefined,
-        }),
-        fetchTabCounts(),
-      ]);
-      setCases(data.items);
-      setTotal(data.total);
-      setTotalPages(data.totalPages);
-      setTabCounts(counts);
+      if (activeFilter === 'shared') {
+        const [allData, counts] = await Promise.all([
+          fetchRuns({
+            page: 1,
+            limit: 1000,
+            tab: 'all-cases',
+            sort: sortField,
+            q: debouncedSearch || undefined,
+          }),
+          fetchTabCounts(),
+        ]);
+
+        const sharedIds = new Set(getSharedRunIds());
+        const sharedItems = allData.items.filter((item) => sharedIds.has(item.runId));
+        const pagedItems = sharedItems.slice((currentPage - 1) * 10, currentPage * 10);
+        const sharedTotalPages = Math.max(1, Math.ceil(sharedItems.length / 10));
+
+        setCases(pagedItems);
+        setTotal(sharedItems.length);
+        setTotalPages(sharedTotalPages);
+        setTabCounts({ ...counts, shared: sharedItems.length });
+      } else {
+        const [data, counts] = await Promise.all([
+          fetchRuns({
+            page: currentPage,
+            limit: 10,
+            tab: activeFilter,
+            sort: sortField,
+            q: debouncedSearch || undefined,
+          }),
+          fetchTabCounts(),
+        ]);
+        setCases(data.items);
+        setTotal(data.total);
+        setTotalPages(data.totalPages);
+        setTabCounts({ ...counts, shared: getSharedRunIds().length });
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load cases');
     } finally {
       setLoading(false);
     }
-  }, [currentPage, activeFilter, sortField, debouncedSearch]);
+  }, [currentPage, activeFilter, sortField, debouncedSearch, refreshSharedKey]);
 
   useEffect(() => { loadCases(); }, [loadCases]);
 
@@ -424,6 +459,11 @@ const WorkspacePage: React.FC<WorkspacePageProps> = ({ darkMode, toggleDarkMode 
     setActiveFilter(tab);
     setCurrentPage(1);
     setShowFilterDropdown(false);
+    if (tab === 'drafts' || tab === 'shared') {
+      setSearchParams({ view: tab });
+    } else {
+      setSearchParams({});
+    }
   };
 
   const handleSortChange = (field: SortField) => {
@@ -501,6 +541,7 @@ const WorkspacePage: React.FC<WorkspacePageProps> = ({ darkMode, toggleDarkMode 
                   <div className="dropdown-menu">
                     <button onClick={() => handleFilterChange('all-cases')}>All Cases</button>
                     <button onClick={() => handleFilterChange('drafts')}>Drafts</button>
+                    <button onClick={() => handleFilterChange('shared')}>Shared with Team</button>
                     <button onClick={() => handleFilterChange('completed')}>Completed</button>
                     <button onClick={() => handleFilterChange('high-priority')}>High Priority</button>
                   </div>
@@ -535,6 +576,7 @@ const WorkspacePage: React.FC<WorkspacePageProps> = ({ darkMode, toggleDarkMode 
           {([
             { tab: 'all-cases'     as FilterTab, label: 'All Cases' },
             { tab: 'drafts'        as FilterTab, label: 'Drafts' },
+            { tab: 'shared'        as FilterTab, label: 'Shared with Team' },
             { tab: 'completed'     as FilterTab, label: 'Completed' },
             { tab: 'high-priority' as FilterTab, label: 'High Priority' },
           ]).map(({ tab, label }) => (
@@ -611,6 +653,16 @@ const WorkspacePage: React.FC<WorkspacePageProps> = ({ darkMode, toggleDarkMode 
                         onClick={e => { e.stopPropagation(); navigate(actionRoute(item)); }}
                       >
                         {actionLabel(item)}
+                      </button>
+                      <button
+                        className="case-action-btn"
+                        onClick={e => {
+                          e.stopPropagation();
+                          toggleRunShared(item.runId);
+                          setRefreshSharedKey((prev) => prev + 1);
+                        }}
+                      >
+                        {isRunShared(item.runId) ? 'Unshare' : 'Share'}
                       </button>
                     </div>
                   </div>

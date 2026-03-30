@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { API_BASE_URL } from '../../../constants/apiConfig';
 import eye from '../../../assets/closedEye.png';
 import eyeOff from '../../../assets/openEye.png';
+import { hydrateCurrentUserDisplayName, setCurrentUserDisplayName } from '../../../lib/userSession';
 
 type AuthView = 'login' | 'register';
 
@@ -76,6 +77,8 @@ const LoginForm: React.FC<FormProps> = ({ onSwitchView, onClose }) => {
       if (token) {
         localStorage.setItem('token', token);
       }
+      setCurrentUserDisplayName(username);
+      await hydrateCurrentUserDisplayName();
       onClose();
       navigate('/workspace');
     } catch {
@@ -106,9 +109,13 @@ const LoginForm: React.FC<FormProps> = ({ onSwitchView, onClose }) => {
           <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
             Password
           </label>
-          <span className="text-xs text-blue-600 cursor-pointer hover:underline">
+          <button
+            type="button"
+            className="text-xs text-blue-600 cursor-pointer hover:underline"
+            onClick={() => navigate('/forgot-password')}
+          >
             Forgot Password?
-          </span>
+          </button>
         </div>
         <div className="relative">
           <input
@@ -203,6 +210,8 @@ const RegisterForm: React.FC<FormProps> = ({ onSwitchView, onClose }) => {
       if (token) {
         localStorage.setItem('token', token);
       }
+      setCurrentUserDisplayName(resolvedUsername);
+      await hydrateCurrentUserDisplayName();
       onClose();
       navigate('/workspace');
     } catch (err) {
