@@ -325,10 +325,6 @@ def readLoopRoute(state: GraphState) -> str:
 
 def routerNode(state: GraphState) -> dict[str, Any]:
     """Decides which LLM provider to use based on query complexity."""
-    if not settings.nvidia_api_key:
-        logger.info("Router decision: huggingface (NVIDIA_API_KEY is not configured)")
-        return {"route_decision": "huggingface"}
-
     if state.get("error"):
         logger.warning("Upstream error detected, routing to Nvidia for robust handling")
         return {"route_decision": "nvidia"}
@@ -371,10 +367,6 @@ def routerNode(state: GraphState) -> dict[str, Any]:
 
 async def nvidiaLlmNode(state: GraphState) -> dict[str, Any]:
     """Calls Nvidia LLM, falls back to HuggingFace on failure."""
-    if not settings.nvidia_api_key:
-        logger.info("Skipping Nvidia generation because NVIDIA_API_KEY is not configured")
-        return await hfLlmNode(state)
-
     query = state.get("standaloneQuery") or state.get("query", "")
     documents = [
         hit.get("_source", {})

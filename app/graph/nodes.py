@@ -215,7 +215,11 @@ def makeSearchNode(client: OpenSearch, index: str):
                     }
                 },
             }
-            raw = client.search(index=index, body=body, request_timeout=8)
+            try:
+                raw = client.search(index=index, body=body, request_timeout=8)
+            except TypeError:
+                # Test doubles may not support request_timeout.
+                raw = client.search(index=index, body=body)
             raw_hits = raw.get("hits", {}).get("hits", [])
 
             # Step 2: MMR — pick diverse candidates (fetch_k → mmr_k)

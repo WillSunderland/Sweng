@@ -41,6 +41,10 @@ def configure_langsmith_tracing(
             tracing_v2,
             "set" if api_key else "missing",
         )
+        os.environ.pop("LANGCHAIN_TRACING_V2", None)
+        os.environ.pop("LANGCHAIN_ENDPOINT", None)
+        os.environ.pop("LANGCHAIN_API_KEY", None)
+        os.environ.pop("LANGCHAIN_PROJECT", None)
         _tracing_enabled = False
         return False
 
