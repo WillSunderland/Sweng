@@ -8,7 +8,9 @@ stages:
 
 github-sync:
   stage: sync
-  image: alpine/git:2.45.2
+  image:
+    name: alpine/git:2.45.2
+    entrypoint: [""]
   allow_failure: true
   tags:
     - docker
@@ -24,7 +26,7 @@ github-sync:
     - if: '$CI_COMMIT_BRANCH == "main"'
   script:
     - |
-      set -euo pipefail
+      set -u
       if [ -z "${GITHUB_TOKEN:-}" ]; then
         echo "GITHUB_TOKEN is not set; skipping GitHub sync."
         exit 0
@@ -36,11 +38,13 @@ github-sync:
       else
         git remote add github "$GITHUB_REMOTE_URL"
       fi
-      git fetch origin --tags
+      if ! git fetch origin --tags; then
+        echo "Origin fetch failed; proceeding without tag sync."
+      fi
       if ! git push github HEAD:refs/heads/main --tags; then
         echo "GitHub sync failed, but this job is non-blocking."
-        exit 0
       fi
+      exit 0
 
 variables:
   PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
