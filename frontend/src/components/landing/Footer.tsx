@@ -35,7 +35,9 @@ export const Footer: React.FC = () => {
 
         <div className="flex gap-4">
           <a
-            href="#"
+            href="https://www.linkedin.com/company/rws-group/"
+            target="_blank"
+            rel="noreferrer"
             className="w-9 h-9 rounded-lg bg-slate-50 flex items-center justify-center text-slate-600 no-underline hover:bg-slate-900 hover:text-white transition-all"
           >
             <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
@@ -43,7 +45,9 @@ export const Footer: React.FC = () => {
             </svg>
           </a>
           <a
-            href="#"
+            href="https://www.rws.com/"
+            target="_blank"
+            rel="noreferrer"
             className="w-9 h-9 rounded-lg bg-slate-50 flex items-center justify-center text-slate-600 no-underline hover:bg-slate-900 hover:text-white transition-all"
           >
             <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">

@@ -156,7 +156,7 @@ def UserLogout(request):
 @permission_classes([IsAuthenticated])
 def TodosGet(request):
     user = request.user
-    todos = Todo.objects.filter(owner=user)
+    todos = Todo.objects.filter(theOwner=user)
     serializer = SERIALIZE_TODO(todos, many=True)
     return Response(serializer.data)
 

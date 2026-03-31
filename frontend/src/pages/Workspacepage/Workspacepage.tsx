@@ -695,7 +695,7 @@ const WorkspacePage: React.FC<WorkspacePageProps> = ({ darkMode, toggleDarkMode 
         <div className="sidebar-widget">
           <div className="widget-header">
             <h3>RESEARCH TRENDS</h3>
-            <a href="#" className="widget-link">SEE ALL</a>
+            <button type="button" className="widget-link" onClick={() => navigate('/history')}>SEE ALL</button>
           </div>
           <div className="widget-content">
             {widgetsLoading ? (

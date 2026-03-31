@@ -1,14 +1,13 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useMemo, useState, useEffect, useRef } from 'react';
 import {
   Cpu, BookOpen, Sparkles, CheckCircle2,
   Leaf, Zap, ArrowLeft, Shield, GitBranch,
 } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import AppSidebar from '../../components/AppSidebar/AppSidebar';
 import '../../components/AppSidebar/SharedSidebar.css';
 import './ExecutionTracePage.css';
-
-// ─── Types ───────────────────────────────────────────────────────────────────
+import { API_BASE_URL, buildAuthHeaders } from '../../constants/apiConfig';
 
 interface ExecutionTracePageProps {
   darkMode?: boolean;
@@ -29,7 +28,30 @@ interface TraceStep {
   tokens?: number;
 }
 
-// ─── Stage Metadata ───────────────────────────────────────────────────────────
+interface RunStep {
+  node?: string;
+  status?: string;
+  detail?: string;
+  label?: string;
+}
+
+interface RunDetail {
+  runId: string;
+  title?: string;
+  status: string;
+  model_used?: string;
+  provider_used?: string;
+  references?: { sourceIds?: string[] };
+  documents?: Array<Record<string, unknown>>;
+  reasoningPath?: {
+    trustScore?: number;
+    carbonTotalG?: number;
+    latencyMs?: number;
+    tokensUsed?: number;
+    steps?: RunStep[];
+  };
+  lastUpdatedAt?: string;
+}
 
 const STAGE_META: Record<StageKey, { Icon: React.ElementType; color: string; thoughts: string[] }> = {
   init: {
@@ -69,25 +91,24 @@ const STAGE_META: Record<StageKey, { Icon: React.ElementType; color: string; tho
   },
 };
 
-// ─── useLiveTimer ─────────────────────────────────────────────────────────────
-
 function useLiveTimer(active: boolean, startFrom = 0): number {
   const [elapsed, setElapsed] = useState(startFrom);
   const startRef = useRef<number | null>(null);
 
   useEffect(() => {
-    if (!active) { startRef.current = null; return; }
+    if (!active) {
+      startRef.current = null;
+      return;
+    }
     startRef.current = Date.now() - startFrom * 1000;
     const id = setInterval(() => {
       setElapsed((Date.now() - startRef.current!) / 1000);
     }, 80);
     return () => clearInterval(id);
-  }, [active]);
+  }, [active, startFrom]);
 
   return elapsed;
 }
-
-// ─── CompletedStageCard ───────────────────────────────────────────────────────
 
 const CompletedStageCard: React.FC<{ step: TraceStep; index: number }> = ({ step, index }) => {
   const { Icon, color, thoughts } = STAGE_META[step.key];
@@ -143,8 +164,6 @@ const CompletedStageCard: React.FC<{ step: TraceStep; index: number }> = ({ step
   );
 };
 
-// ─── RunningStageCard ─────────────────────────────────────────────────────────
-
 const RunningStageCard: React.FC<{ step: TraceStep; index: number }> = ({ step, index }) => {
   const { Icon, color, thoughts } = STAGE_META[step.key];
   const [thoughtIdx, setThoughtIdx] = useState(0);
@@ -154,7 +173,10 @@ const RunningStageCard: React.FC<{ step: TraceStep; index: number }> = ({ step, 
   useEffect(() => {
     if (thoughts.length <= 1) return;
     const id = setInterval(() => {
-      setThoughtIdx((i) => { setThoughtKey((k) => k + 1); return (i + 1) % thoughts.length; });
+      setThoughtIdx((i) => {
+        setThoughtKey((k) => k + 1);
+        return (i + 1) % thoughts.length;
+      });
     }, 2500);
     return () => clearInterval(id);
   }, [thoughts.length]);
@@ -205,8 +227,6 @@ const RunningStageCard: React.FC<{ step: TraceStep; index: number }> = ({ step, 
   );
 };
 
-// ─── PendingStageCard ─────────────────────────────────────────────────────────
-
 const PendingStageCard: React.FC<{ step: TraceStep; index: number; isLast: boolean }> = ({ step, index, isLast }) => {
   const { Icon } = STAGE_META[step.key];
   return (
@@ -233,47 +253,193 @@ const PendingStageCard: React.FC<{ step: TraceStep; index: number; isLast: boole
   );
 };
 
-// ─── ExecutionTracePage ───────────────────────────────────────────────────────
-
 const ExecutionTracePage: React.FC<ExecutionTracePageProps> = ({ darkMode, toggleDarkMode }) => {
   const navigate = useNavigate();
+  const { id } = useParams();
+  const [run, setRun] = useState<RunDetail | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let ignore = false;
+
+    async function loadRun(): Promise<void> {
+      if (!id) {
+        setError('Missing run ID');
+        setLoading(false);
+        return;
+      }
+
+      setLoading(true);
+      setError(null);
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/runs/${id}`, {
+          headers: buildAuthHeaders(),
+          credentials: 'include',
+        });
+        if (!res.ok) {
+          throw new Error(`Failed to load run (${res.status})`);
+        }
+        const data = (await res.json()) as RunDetail;
+        if (!ignore) setRun(data);
+      } catch (err) {
+        if (!ignore) setError(err instanceof Error ? err.message : 'Failed to load trace');
+      } finally {
+        if (!ignore) setLoading(false);
+      }
+    }
+
+    loadRun();
+    return () => {
+      ignore = true;
+    };
+  }, [id]);
 
   const handleBack = () => {
-    if (window.history.length > 1) { navigate(-1); return; }
+    if (window.history.length > 1) {
+      navigate(-1);
+      return;
+    }
     navigate('/workspace');
   };
 
-  const steps: TraceStep[] = [
-    {
-      id: 1, key: 'init', title: 'Agent Initialisation', status: 'complete',
-      elapsed: 0.157, detail: 'Model context and retrieval index initialised for current report scope.',
-      tokens: 128,
-    },
-    {
-      id: 2, key: 'accessing', title: 'Statute Corpus Access', status: 'complete',
-      elapsed: 0.404, detail: 'Primary statutes and linked references loaded with citation anchors.',
-      docCount: 847, tokens: 412,
-    },
-    {
-      id: 3, key: 'synthesizing', title: 'Synthesis — Section 12', status: 'running',
-      elapsed: 0.987, detail: 'Cross-referencing obligations, precedents, and confidence adjustments.',
-    },
-    {
-      id: 4, key: 'checking', title: 'Sustainability Validation', status: 'pending',
-      elapsed: null, detail: 'Final carbon estimate calculation and optimisation scoring.',
-    },
-  ];
+  const sourceCount = useMemo(() => {
+    if (!run) return 0;
+    const docs = run.documents?.length ?? 0;
+    if (docs > 0) return docs;
+    return run.references?.sourceIds?.length ?? 0;
+  }, [run]);
 
-  const completedCount = steps.filter(s => s.status === 'complete').length;
+  const providerLabel = useMemo(() => {
+    if (!run?.provider_used) return 'RAG Pipeline';
+    const provider = run.provider_used.toLowerCase();
+    if (provider.includes('nvidia')) return 'NVIDIA NIM';
+    if (provider.includes('huggingface')) return 'HuggingFace';
+    return run.provider_used;
+  }, [run]);
+
+  const totalLatencySec = useMemo(() => {
+    const ms = run?.reasoningPath?.latencyMs ?? 0;
+    return ms > 0 ? ms / 1000 : 0;
+  }, [run]);
+
+  const trustPct = useMemo(() => {
+    const score = run?.reasoningPath?.trustScore;
+    if (typeof score !== 'number') return 0;
+    const normalized = score > 1 ? score / 100 : score;
+    return Math.max(0, Math.min(normalized, 1)) * 100;
+  }, [run]);
+
+  const steps: TraceStep[] = useMemo(() => {
+    const runSteps = run?.reasoningPath?.steps ?? [];
+    const allDone = run?.status === 'completed';
+    const total = totalLatencySec;
+
+    const phaseDetails = {
+      init: runSteps
+        .filter((s) => ['input', 'rewrite', 'plan', 'prefetch_decision', 'router'].includes((s.node ?? '').toLowerCase()))
+        .map((s) => s.detail)
+        .filter(Boolean)
+        .join(' ') || 'Model context and request intent prepared.',
+      accessing: runSteps
+        .filter((s) => (s.node ?? '').toLowerCase() === 'search')
+        .map((s) => s.detail)
+        .filter(Boolean)
+        .join(' ') || 'Retrieved relevant legislative documents from index.',
+      synthesizing: runSteps
+        .filter((s) => ['read', 'answer'].includes((s.node ?? '').toLowerCase()))
+        .map((s) => s.detail)
+        .filter(Boolean)
+        .join(' ') || 'Synthesised answer from retrieved context and chat intent.',
+      checking: runSteps
+        .filter((s) => ['llmoutputnode', 'llm_output', 'output'].includes((s.node ?? '').toLowerCase()))
+        .map((s) => s.detail)
+        .filter(Boolean)
+        .join(' ') || 'Prepared output payload, references, and trust metrics.',
+    };
+
+    const statuses: StepStatus[] = allDone
+      ? ['complete', 'complete', 'complete', 'complete']
+      : ['complete', 'complete', 'running', 'pending'];
+
+    return [
+      {
+        id: 1,
+        key: 'init',
+        title: 'Agent Initialisation',
+        status: statuses[0],
+        elapsed: total > 0 ? total * 0.12 : null,
+        detail: phaseDetails.init,
+      },
+      {
+        id: 2,
+        key: 'accessing',
+        title: 'Statute Corpus Access',
+        status: statuses[1],
+        elapsed: total > 0 ? total * 0.33 : null,
+        detail: phaseDetails.accessing,
+        docCount: sourceCount,
+      },
+      {
+        id: 3,
+        key: 'synthesizing',
+        title: 'Answer Synthesis',
+        status: statuses[2],
+        elapsed: total > 0 ? total * 0.4 : null,
+        detail: phaseDetails.synthesizing,
+        tokens: run?.reasoningPath?.tokensUsed ?? 0,
+      },
+      {
+        id: 4,
+        key: 'checking',
+        title: 'Output Validation',
+        status: statuses[3],
+        elapsed: total > 0 ? total * 0.15 : null,
+        detail: phaseDetails.checking,
+      },
+    ];
+  }, [run, sourceCount, totalLatencySec]);
+
+  const completedCount = steps.filter((s) => s.status === 'complete').length;
   const progressPct = (completedCount / steps.length) * 100;
+
+  if (loading) {
+    return (
+      <div className="trace-page">
+        <AppSidebar activeItem="workspace" darkMode={darkMode} toggleDarkMode={toggleDarkMode} />
+        <main className="trace-main">
+          <header className="trace-header">
+            <h1 className="trace-title">Execution Trace</h1>
+            <p className="trace-query">Loading run trace...</p>
+          </header>
+        </main>
+      </div>
+    );
+  }
+
+  if (error || !run) {
+    return (
+      <div className="trace-page">
+        <AppSidebar activeItem="workspace" darkMode={darkMode} toggleDarkMode={toggleDarkMode} />
+        <main className="trace-main">
+          <header className="trace-header">
+            <h1 className="trace-title">Execution Trace</h1>
+            <p className="trace-query">{error ?? 'Run not found.'}</p>
+            <button className="trace-back-btn" onClick={handleBack}>
+              <ArrowLeft size={14} strokeWidth={2.5} />
+              Back
+            </button>
+          </header>
+        </main>
+      </div>
+    );
+  }
 
   return (
     <div className="trace-page">
       <AppSidebar activeItem="workspace" darkMode={darkMode} toggleDarkMode={toggleDarkMode} />
 
       <main className="trace-main">
-
-        {/* ── Page Header ── */}
         <header className="trace-header">
           <div className="trace-breadcrumb">
             <button className="trace-back-btn" onClick={handleBack}>
@@ -288,28 +454,25 @@ const ExecutionTracePage: React.FC<ExecutionTracePageProps> = ({ darkMode, toggl
             <div className="trace-title-left">
               <div className="trace-title-badge">
                 <span className="trace-live-dot" />
-                LIVE
+                {run.status?.toUpperCase() ?? 'LIVE'}
               </div>
               <div>
                 <h1 className="trace-title">Execution Trace</h1>
-                <p className="trace-query">
-                  "What are the compliance requirements for commercial tenancies under the 2023 amendments?"
-                </p>
+                <p className="trace-query">"{run.title ?? run.runId}"</p>
               </div>
             </div>
             <div className="trace-title-meta">
               <div className="trace-meta-item">
                 <span className="trace-meta-label">Agent</span>
-                <span className="trace-meta-val">propylon-vm-a9-3</span>
+                <span className="trace-meta-val">{providerLabel}</span>
               </div>
               <div className="trace-meta-item">
-                <span className="trace-meta-label">Started</span>
-                <span className="trace-meta-val">12:41:08 UTC</span>
+                <span className="trace-meta-label">Updated</span>
+                <span className="trace-meta-val">{run.lastUpdatedAt ?? 'Unknown'}</span>
               </div>
             </div>
           </div>
 
-          {/* Pipeline progress bar */}
           <div className="trace-progress-wrap">
             <div className="trace-progress-labels">
               <span>{completedCount} of {steps.length} stages complete</span>
@@ -321,14 +484,13 @@ const ExecutionTracePage: React.FC<ExecutionTracePageProps> = ({ darkMode, toggl
           </div>
         </header>
 
-        {/* ── KPI Strip ── */}
         <section className="trace-kpi-strip">
           <div className="trace-kpi-card">
             <div className="trace-kpi-icon" style={{ background: 'color-mix(in srgb, var(--accent-blue) 10%, var(--card-bg))' }}>
               <Zap size={14} style={{ color: 'var(--accent-blue)' }} strokeWidth={2.5} />
             </div>
             <div>
-              <strong>1.248s</strong>
+              <strong>{totalLatencySec > 0 ? `${totalLatencySec.toFixed(3)}s` : '—'}</strong>
               <span>Total Latency</span>
             </div>
           </div>
@@ -337,7 +499,7 @@ const ExecutionTracePage: React.FC<ExecutionTracePageProps> = ({ darkMode, toggl
               <BookOpen size={14} style={{ color: '#f59e0b' }} strokeWidth={2.5} />
             </div>
             <div>
-              <strong>847</strong>
+              <strong>{sourceCount}</strong>
               <span>Documents</span>
             </div>
           </div>
@@ -346,7 +508,7 @@ const ExecutionTracePage: React.FC<ExecutionTracePageProps> = ({ darkMode, toggl
               <Shield size={14} style={{ color: 'var(--accent-green)' }} strokeWidth={2.5} />
             </div>
             <div>
-              <strong>98.4%</strong>
+              <strong>{trustPct.toFixed(1)}%</strong>
               <span>Confidence</span>
             </div>
           </div>
@@ -355,16 +517,13 @@ const ExecutionTracePage: React.FC<ExecutionTracePageProps> = ({ darkMode, toggl
               <Leaf size={14} style={{ color: '#10b981' }} strokeWidth={2.5} />
             </div>
             <div>
-              <strong>0.168g</strong>
+              <strong>{(run.reasoningPath?.carbonTotalG ?? 0).toFixed(3)}g</strong>
               <span>CO₂ Emitted</span>
             </div>
           </div>
         </section>
 
-        {/* ── Main Content ── */}
         <div className="trace-content">
-
-          {/* Timeline */}
           <section className="trace-timeline">
             <div className="trace-timeline-header">
               <h2>Pipeline Stages</h2>
@@ -376,46 +535,46 @@ const ExecutionTracePage: React.FC<ExecutionTracePageProps> = ({ darkMode, toggl
               {steps.map((step, i) => {
                 const isLast = i === steps.length - 1;
                 if (step.status === 'complete') return <CompletedStageCard key={step.id} step={step} index={i} />;
-                if (step.status === 'running')  return <RunningStageCard   key={step.id} step={step} index={i} />;
+                if (step.status === 'running') return <RunningStageCard key={step.id} step={step} index={i} />;
                 return <PendingStageCard key={step.id} step={step} index={i} isLast={isLast} />;
               })}
             </div>
           </section>
 
-          {/* Right Panel */}
           <aside className="trace-inspector">
-
-            {/* Session Info */}
             <div className="insp-section">
               <h3 className="insp-title">Session Info</h3>
               <div className="insp-kv-grid">
-                {[
-                  { label: 'Agent ID',   value: 'propylon-vm-a9-3' },
-                  { label: 'Latency',    value: '589.22 ms' },
-                  { label: 'Retrieval',  value: '847 hits' },
-                  { label: 'Run ID',     value: 'run_a9f3c1' },
-                ].map(({ label, value }) => (
-                  <div key={label} className="insp-kv-row">
-                    <span className="insp-kv-label">{label}</span>
-                    <span className="insp-kv-val">{value}</span>
-                  </div>
-                ))}
+                <div className="insp-kv-row">
+                  <span className="insp-kv-label">Provider</span>
+                  <span className="insp-kv-val">{providerLabel}</span>
+                </div>
+                <div className="insp-kv-row">
+                  <span className="insp-kv-label">Latency</span>
+                  <span className="insp-kv-val">{run.reasoningPath?.latencyMs ?? 0} ms</span>
+                </div>
+                <div className="insp-kv-row">
+                  <span className="insp-kv-label">Retrieval</span>
+                  <span className="insp-kv-val">{sourceCount} hits</span>
+                </div>
+                <div className="insp-kv-row">
+                  <span className="insp-kv-label">Run ID</span>
+                  <span className="insp-kv-val">{run.runId}</span>
+                </div>
               </div>
             </div>
 
-            {/* Confidence */}
             <div className="insp-section">
               <div className="insp-section-header">
                 <h3 className="insp-title">Confidence Score</h3>
-                <span className="insp-score-val">98.4%</span>
+                <span className="insp-score-val">{trustPct.toFixed(1)}%</span>
               </div>
               <div className="insp-bar-track">
-                <div className="insp-bar-fill insp-bar-fill--confidence" style={{ width: '98.4%' }} />
+                <div className="insp-bar-fill insp-bar-fill--confidence" style={{ width: `${trustPct.toFixed(1)}%` }} />
               </div>
-              <p className="insp-bar-caption">High-confidence synthesis · enterprise grade</p>
+              <p className="insp-bar-caption">Computed from citation quality and retrieval coverage</p>
             </div>
 
-            {/* Carbon Footprint */}
             <div className="insp-section insp-section--green">
               <div className="insp-green-header">
                 <div className="insp-green-icon">
@@ -423,12 +582,12 @@ const ExecutionTracePage: React.FC<ExecutionTracePageProps> = ({ darkMode, toggl
                 </div>
                 <div>
                   <h3 className="insp-title">Carbon Footprint</h3>
-                  <p className="insp-green-sub">This session</p>
+                  <p className="insp-green-sub">This run</p>
                 </div>
-                <span className="insp-green-badge">↓42% avg</span>
+                <span className="insp-green-badge">Tracked</span>
               </div>
               <div className="insp-co2-row">
-                <span className="insp-co2-val">0.168g</span>
+                <span className="insp-co2-val">{(run.reasoningPath?.carbonTotalG ?? 0).toFixed(3)}g</span>
                 <span className="insp-co2-unit">CO₂e</span>
               </div>
               <div className="insp-bar-track insp-bar-track--thin">
@@ -442,14 +601,13 @@ const ExecutionTracePage: React.FC<ExecutionTracePageProps> = ({ darkMode, toggl
               </div>
             </div>
 
-            {/* Model Routing */}
             <div className="insp-section">
               <h3 className="insp-title">Model Routing</h3>
               <div className="insp-routing-stack">
                 <div className="insp-routing-node insp-routing-node--primary">
                   <GitBranch size={12} strokeWidth={2} />
                   <div className="insp-routing-info">
-                    <span className="insp-routing-name">NVIDIA NIM</span>
+                    <span className="insp-routing-name">{providerLabel}</span>
                     <span className="insp-routing-role">Primary Inference</span>
                   </div>
                   <span className="insp-routing-dot insp-routing-dot--active" />
@@ -465,7 +623,6 @@ const ExecutionTracePage: React.FC<ExecutionTracePageProps> = ({ darkMode, toggl
                 </div>
               </div>
             </div>
-
           </aside>
         </div>
       </main>

@@ -54,7 +54,7 @@ logger = logging.getLogger(__name__)
 
 RUN_STATUS_COMPLETED = "completed"
 RUN_STATUS_RUNNING = "running"
-DEFAULT_TRUST_SCORE = 85
+DEFAULT_TRUST_SCORE = 0.85
 DEFAULT_CARBON_G = 0.3
 
 VALID_PRIORITIES = {"high", "medium", "low"}
@@ -138,6 +138,42 @@ def _resolve_priority(priority: str | None, query: str) -> str:
 def _scoped_session_key(user_id: str, session_id: str) -> str:
     """Scope session keys by user so different users never share history."""
     return f"user_{user_id}_{session_id}"
+
+
+def _resolve_user_id(current_user: dict | None) -> str:
+    return get_user_id(current_user) if current_user else "anonymous"
+
+
+def _compute_trust_score(result: dict, source_count: int) -> float:
+    """Compute a 0-1 trust score using retrieval and citation quality signals."""
+    if result.get("error"):
+        return 0.0
+
+    citation_validation = result.get("citation_validation") or {}
+    citation_accuracy = citation_validation.get("citation_accuracy")
+    if isinstance(citation_accuracy, (int, float)):
+        citation_component = float(citation_accuracy)
+        if citation_component > 1.0:
+            citation_component = citation_component / 100.0
+    else:
+        citation_component = 0.6 if source_count > 0 else 0.4
+
+    source_component = min(max(source_count, 0), 5) / 5.0
+    hallucinated = len(citation_validation.get("hallucinated_citations") or [])
+    valid_count = len(citation_validation.get("valid_citations") or [])
+    uncited_count = len(citation_validation.get("uncited_sources") or [])
+    hallucination_penalty = min(hallucinated, 3) * 0.08
+    coverage_penalty = min(uncited_count, source_count) / max(source_count, 1) * 0.2
+    citation_presence_penalty = 0.15 if source_count > 0 and valid_count == 0 else 0.0
+    retrieval_penalty = (
+        0.1 if bool(result.get("retrieval_skipped")) and source_count == 0 else 0.0
+    )
+
+    base = 0.3 if source_count == 0 else 0.5
+    trust = base + (0.3 * citation_component) + (0.2 * source_component)
+    trust = trust - hallucination_penalty - coverage_penalty - citation_presence_penalty - retrieval_penalty
+    trust = max(0.0, min(trust, 0.99))
+    return round(trust, 3)
 
 
 def _store_sources(run_id: str, sources: list[SourceInfo | dict]) -> None:
@@ -322,7 +358,7 @@ async def _stream_run_events(query: str, priority: str | None, user_id: str):
 async def create_run(
     request: CreateRunRequest, current_user: OptionalCurrentUser = None
 ):
-    user_id = get_user_id(current_user) if current_user else "anonymous"
+    user_id = _resolve_user_id(current_user)
     run_id = f"run_{uuid.uuid4().hex[:12]}"
     created_at = get_iso_timestamp()
     resolved_priority = _resolve_priority(request.priority, request.query)
@@ -444,7 +480,7 @@ async def stream_run(
     priority: str | None = Query(None),
 ):
     """SSE endpoint — streams agent thought events while processing a query."""
-    user_id = get_user_id(current_user) if current_user else "anonymous"
+    user_id = _resolve_user_id(current_user)
     return StreamingResponse(
         _stream_run_events(query, priority=priority, user_id=user_id),
         media_type="text/event-stream",
@@ -463,7 +499,7 @@ async def list_runs(
     order: str = "desc",
     q: str = None,
 ):
-    user_id = get_user_id(current_user) if current_user else "anonymous"
+    user_id = _resolve_user_id(current_user)
     all_items = []
 
     for run_id, run in RUN_STORE.items():
@@ -471,6 +507,8 @@ async def list_runs(
             continue
         result = run.get("result", {})
         carbon_tons = float(result.get("carbonCountInTons", 0.0))
+        source_count = len([k for k in SOURCE_STORE if k.startswith(f"{run_id}_src_")])
+        trust_score = _compute_trust_score(result, source_count)
         item = {
             "runId": run_id,
             "title": f"Analysis for: {run.get('query', 'Unknown')}",
@@ -484,9 +522,8 @@ async def list_runs(
             "tokens_used": result.get("token_count"),
             "model_used": result.get("model_used"),
             "provider": result.get("provider"),
-            "sourceCount": len(
-                [k for k in SOURCE_STORE if k.startswith(f"{run_id}_src_")]
-            ),
+            "sourceCount": source_count,
+            "trustScore": trust_score,
         }
         if status and item["status"] != status:
             continue
@@ -522,7 +559,7 @@ async def list_runs(
 
 @app.get("/api/runs/{run_id}")
 async def get_run(run_id: str, current_user: OptionalCurrentUser = None):
-    user_id = get_user_id(current_user) if current_user else "anonymous"
+    user_id = _resolve_user_id(current_user)
     run = RUN_STORE.get(run_id)
     if not run:
         raise HTTPException(status_code=404, detail=f"Run {run_id} not found")
@@ -538,6 +575,7 @@ async def get_run(run_id: str, current_user: OptionalCurrentUser = None):
     carbon_grams = tons_to_grams(carbon_tons) if carbon_tons else DEFAULT_CARBON_G
     citation_validation = result.get("citation_validation")
     token_count = result.get("token_count", 0)
+    trust_score = _compute_trust_score(result, len(source_ids))
 
     return {
         "runId": run_id,
@@ -589,7 +627,7 @@ async def get_run(run_id: str, current_user: OptionalCurrentUser = None):
         "reasoningPath": {
             "engine": "langgraph",
             "steps": reasoning_steps,
-            "trustScore": DEFAULT_TRUST_SCORE,
+            "trustScore": trust_score,
             "carbonTotalG": carbon_grams,
             "latencyMs": result.get("latency_ms", run.get("latency_ms", 0)),
             "tokensUsed": token_count,
@@ -661,8 +699,8 @@ async def patch_run(run_id: str, updates: dict, current_user: CurrentUser):
 
 
 @app.get("/api/dashboard/summary")
-async def dashboard_summary(current_user: CurrentUser):
-    user_id = get_user_id(current_user)
+async def dashboard_summary(current_user: OptionalCurrentUser = None):
+    user_id = _resolve_user_id(current_user)
     user_runs = {k: v for k, v in RUN_STORE.items() if v.get("user_id") == user_id}
     total = len(user_runs)
     completed = sum(
@@ -685,8 +723,8 @@ async def dashboard_summary(current_user: CurrentUser):
 
 
 @app.get("/api/dashboard/research-trends")
-async def research_trends(current_user: CurrentUser):
-    user_id = get_user_id(current_user)
+async def research_trends(current_user: OptionalCurrentUser = None):
+    user_id = _resolve_user_id(current_user)
     topics: dict[str, int] = {}
     for run in RUN_STORE.values():
         if run.get("user_id") != user_id:
@@ -699,8 +737,8 @@ async def research_trends(current_user: CurrentUser):
 
 
 @app.get("/api/dashboard/system-activity")
-async def system_activity(current_user: CurrentUser):
-    user_id = get_user_id(current_user)
+async def system_activity(current_user: OptionalCurrentUser = None):
+    user_id = _resolve_user_id(current_user)
     activities = []
     for run_id, run in RUN_STORE.items():
         if run.get("user_id") != user_id:
@@ -721,8 +759,8 @@ async def system_activity(current_user: CurrentUser):
 
 
 @app.get("/api/dashboard/ai-efficiency")
-async def ai_efficiency(current_user: CurrentUser):
-    user_id = get_user_id(current_user)
+async def ai_efficiency(current_user: OptionalCurrentUser = None):
+    user_id = _resolve_user_id(current_user)
     total_carbon = 0.0
     total_tokens = 0
     model_usage: dict[str, int] = {}

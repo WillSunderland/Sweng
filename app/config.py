@@ -19,6 +19,7 @@ class Settings(BaseSettings):
 
     server_host: str = "0.0.0.0"
     server_port: int = DEFAULT_SERVER_PORT
+    cors_allowed_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
 
     # Nvidia LLM
     nvidia_api_key: str = ""

@@ -134,7 +134,7 @@ interface AgentEvent {
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
-const BASE_URL = API_BASE_URL || 'http://localhost:8000';
+const BASE_URL = API_BASE_URL;
 const STREAM_TIMEOUT_MS = 90_000;
 
 interface VoiceRecognitionEvent {

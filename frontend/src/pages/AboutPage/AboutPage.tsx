@@ -73,15 +73,48 @@ const AboutPage = () => {
         </button>
       </section>
 
+      <section className="mission" id="privacy">
+        <h2>Privacy Policy</h2>
+        <p>
+          We process account and usage data only for platform operation, security monitoring, and
+          service improvement. Sensitive legal content is handled under role-based access controls
+          and encrypted transport.
+        </p>
+      </section>
+
+      <section className="mission" id="terms">
+        <h2>Terms of Service</h2>
+        <p>
+          The platform supports legal research workflows and does not replace professional legal
+          advice. Users are responsible for final review of outputs before operational use.
+        </p>
+      </section>
+
+      <section className="mission" id="accessibility">
+        <h2>Accessibility</h2>
+        <p>
+          We aim for accessible navigation, semantic structure, and keyboard-friendly interactions
+          across core workflows, including research, report, and trace pages.
+        </p>
+      </section>
+
+      <section className="mission" id="security">
+        <h2>Security</h2>
+        <p>
+          Authentication is token-based, audit logging is enabled for critical flows, and the
+          platform supports enterprise deployment controls for data governance.
+        </p>
+      </section>
+
       <footer>
         <div>
           <h3>RWS Propylon</h3>
           <p>© 2026 All rights reserved</p>
         </div>
         <div className="footer-links">
-          <a href="#" onClick={() => navigate('/workspace')}>Workspace</a>
-          <a href="#" onClick={() => navigate('/history')}>History</a>
-          <a href="#">Privacy</a>
+          <a href="/workspace">Workspace</a>
+          <a href="/history">History</a>
+          <a href="/about#privacy">Privacy</a>
         </div>
       </footer>
     </div>

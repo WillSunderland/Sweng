@@ -5,6 +5,9 @@ from django.contrib.auth.models import User
 
 
 class SERIALIZE_TODO(serializers.ModelSerializer):
+    name = serializers.CharField(source="theName")
+    completed = serializers.BooleanField(source="theCompleted")
+
     class Meta:
         model = Todo
         fields = ["id", "name", "completed"]

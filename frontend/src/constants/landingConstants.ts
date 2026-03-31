@@ -56,10 +56,10 @@ export const FEATURES: FeatureCard[] = [
 ];
 
 export const FOOTER_LINKS: FooterLink[] = [
-  { label: 'Privacy Policy', href: '#privacy' },
-  { label: 'Terms of Service', href: '#terms' },
-  { label: 'Accessibility', href: '#accessibility' },
-  { label: 'Security', href: '#security' },
+  { label: 'Privacy Policy', href: '/about#privacy' },
+  { label: 'Terms of Service', href: '/about#terms' },
+  { label: 'Accessibility', href: '/about#accessibility' },
+  { label: 'Security', href: '/about#security' },
 ];
 
 export const SIDEBAR_NAV_ITEMS: SidebarNavItem[] = [
