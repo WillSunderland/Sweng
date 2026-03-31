@@ -41,6 +41,8 @@ const TYPE_CONFIG: Record<string, { bg: string; color: string; Icon: IconCompone
 const formatDate = (d: string) =>
   new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 
+const ARCHIVE_SELECTIONS_KEY = 'archiveSavedSelections';
+
 const SkeletonRow = () => (
   <div className="skeleton-row">
     <div className="sk sk-icon" />
@@ -65,6 +67,9 @@ const HistoryPage = ({ darkMode, toggleDarkMode }: HistoryPageProps) => {
   const [cases, setCases] = useState<ArchiveCase[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [bulkMode, setBulkMode] = useState(false);
+  const [selectedCaseIds, setSelectedCaseIds] = useState<string[]>([]);
+  const [actionMessage, setActionMessage] = useState<string | null>(null);
 
   useEffect(() => {
     let ignore = false;
@@ -150,6 +155,120 @@ const HistoryPage = ({ darkMode, toggleDarkMode }: HistoryPageProps) => {
     c.team.toLowerCase().includes(query)
   );
 
+  useEffect(() => {
+    if (!actionMessage) return;
+    const timeout = setTimeout(() => setActionMessage(null), 2600);
+    return () => clearTimeout(timeout);
+  }, [actionMessage]);
+
+  const isCaseSelected = (id: string): boolean => selectedCaseIds.includes(id);
+
+  const toggleCaseSelection = (id: string): void => {
+    setSelectedCaseIds((prev) =>
+      prev.includes(id) ? prev.filter((existingId) => existingId !== id) : [...prev, id]
+    );
+  };
+
+  const downloadJson = (fileName: string, data: unknown): void => {
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = fileName;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const fetchRunDetail = async (runId: string): Promise<unknown> => {
+    const res = await fetch(`${API_BASE_URL}/api/runs/${runId}`, {
+      headers: buildAuthHeaders(),
+      credentials: 'include',
+    });
+    if (!res.ok) {
+      throw new Error(`Failed to fetch run ${runId}`);
+    }
+    return res.json();
+  };
+
+  const handleExportSingle = async (archiveCase: ArchiveCase): Promise<void> => {
+    try {
+      const payload = await fetchRunDetail(archiveCase.id);
+      downloadJson(`case-${archiveCase.id}.json`, payload);
+      setActionMessage(`Exported ${archiveCase.id}.`);
+    } catch {
+      downloadJson(`case-${archiveCase.id}.json`, archiveCase);
+      setActionMessage(`Exported summary for ${archiveCase.id}.`);
+    }
+  };
+
+  const handleExportAll = async (): Promise<void> => {
+    const sortedVisible = sortCases(filtered);
+    const targetCases = bulkMode && selectedCaseIds.length > 0
+      ? sortedVisible.filter((item) => selectedCaseIds.includes(item.id))
+      : sortedVisible;
+
+    if (targetCases.length === 0) {
+      setActionMessage('No cases available to export.');
+      return;
+    }
+
+    const results = await Promise.all(
+      targetCases.map(async (archiveCase) => {
+        try {
+          return await fetchRunDetail(archiveCase.id);
+        } catch {
+          return archiveCase;
+        }
+      })
+    );
+
+    downloadJson(`case-archive-export-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.json`, {
+      exportedAt: new Date().toISOString(),
+      total: results.length,
+      selectedOnly: bulkMode && selectedCaseIds.length > 0,
+      items: results,
+    });
+    setActionMessage(`Exported ${results.length} case${results.length === 1 ? '' : 's'}.`);
+  };
+
+  const handleBulkToggle = (): void => {
+    setBulkMode((prev) => {
+      if (prev) {
+        setSelectedCaseIds([]);
+      }
+      return !prev;
+    });
+  };
+
+  const handleSelectVisible = (): void => {
+    const visibleIds = sortCases(filtered).map((item) => item.id);
+    const everyVisibleSelected = visibleIds.length > 0 && visibleIds.every((id) => selectedCaseIds.includes(id));
+    setSelectedCaseIds((prev) => {
+      if (everyVisibleSelected) {
+        return prev.filter((id) => !visibleIds.includes(id));
+      }
+      return Array.from(new Set([...prev, ...visibleIds]));
+    });
+  };
+
+  const handleSaveSelection = (): void => {
+    if (selectedCaseIds.length === 0) {
+      setActionMessage('Select at least one case to save.');
+      return;
+    }
+
+    const selectedCases = sortCases(filtered).filter((item) => selectedCaseIds.includes(item.id));
+    localStorage.setItem(
+      ARCHIVE_SELECTIONS_KEY,
+      JSON.stringify({
+        savedAt: new Date().toISOString(),
+        ids: selectedCaseIds,
+        items: selectedCases,
+      })
+    );
+    setActionMessage(`Saved ${selectedCaseIds.length} selected case${selectedCaseIds.length === 1 ? '' : 's'}.`);
+  };
+
   const groupedByMonth = sortCases(filtered).reduce<Record<string, ArchiveCase[]>>((acc, item) => {
     const monthLabel = new Date(item.date).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
     acc[monthLabel] = acc[monthLabel] ?? [];
@@ -183,7 +302,25 @@ const HistoryPage = ({ darkMode, toggleDarkMode }: HistoryPageProps) => {
     const cfg = TYPE_CONFIG[c.type] ?? { bg: '#f8fafc', color: 'var(--text-muted)', Icon: FileText as IconComponent };
     const { Icon } = cfg;
     return (
-      <div className="case-row">
+      <div
+        className={`case-row${bulkMode && isCaseSelected(c.id) ? ' case-row--selected' : ''}`}
+        onClick={() => {
+          if (bulkMode) toggleCaseSelection(c.id);
+        }}
+      >
+        {bulkMode && (
+          <button
+            type="button"
+            className={`case-select-toggle${isCaseSelected(c.id) ? ' selected' : ''}`}
+            onClick={(event) => {
+              event.stopPropagation();
+              toggleCaseSelection(c.id);
+            }}
+            aria-label={isCaseSelected(c.id) ? 'Deselect case' : 'Select case'}
+          >
+            {isCaseSelected(c.id) ? '✓' : ''}
+          </button>
+        )}
         <div className="case-type-icon" style={{ background: cfg.bg, color: cfg.color }}>
           <Icon size={16} strokeWidth={1.8} />
         </div>
@@ -206,14 +343,34 @@ const HistoryPage = ({ darkMode, toggleDarkMode }: HistoryPageProps) => {
         </div>
 
         <div className="case-actions">
-          <button className="case-action-primary" onClick={() => navigate(`/report/${c.id}`)}>
+          <button
+            className="case-action-primary"
+            onClick={(event) => {
+              event.stopPropagation();
+              navigate(`/report/${c.id}`);
+            }}
+          >
             <ExternalLink size={12} strokeWidth={2} />
             View Report
           </button>
-          <button className="case-action-icon" title="Download">
+          <button
+            className="case-action-icon"
+            title="Download"
+            onClick={(event) => {
+              event.stopPropagation();
+              void handleExportSingle(c);
+            }}
+          >
             <Download size={13} strokeWidth={1.8} />
           </button>
-          <button className="case-action-icon" title="View Trace" onClick={() => navigate(`/trace/${c.id}`)}>
+          <button
+            className="case-action-icon"
+            title="View Trace"
+            onClick={(event) => {
+              event.stopPropagation();
+              navigate(`/trace/${c.id}`);
+            }}
+          >
             <ExternalLink size={13} strokeWidth={1.8} />
           </button>
         </div>
@@ -257,13 +414,29 @@ const HistoryPage = ({ darkMode, toggleDarkMode }: HistoryPageProps) => {
             </div>
           </div>
           <div className="history-header-actions">
-            <button className="history-secondary-btn">Bulk Select</button>
-            <button className="history-primary-btn">
+            <button className="history-secondary-btn" onClick={handleBulkToggle}>
+              {bulkMode ? 'Cancel' : 'Bulk Select'}
+            </button>
+            {bulkMode && (
+              <button className="history-secondary-btn" onClick={handleSelectVisible}>
+                {sortCases(filtered).length > 0 && sortCases(filtered).every((item) => selectedCaseIds.includes(item.id))
+                  ? 'Clear Visible'
+                  : 'Select Visible'}
+              </button>
+            )}
+            {bulkMode && (
+              <button className="history-secondary-btn history-save-btn" onClick={handleSaveSelection}>
+                Save Selected
+              </button>
+            )}
+            <button className="history-primary-btn" onClick={() => void handleExportAll()}>
               <Download size={13} strokeWidth={2} />
-              Export All
+              {bulkMode && selectedCaseIds.length > 0 ? `Export Selected (${selectedCaseIds.length})` : 'Export All'}
             </button>
           </div>
         </header>
+
+        {actionMessage && <p className="history-action-message">{actionMessage}</p>}
 
         <div className="arch-kpi-strip">
           <div className="arch-kpi-card arch-kpi-card--blue">

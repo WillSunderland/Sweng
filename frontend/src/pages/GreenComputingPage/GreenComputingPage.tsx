@@ -6,22 +6,60 @@ import {
 } from 'lucide-react';
 import { ComposableMap, Geographies, Geography, Marker } from 'react-simple-maps';
 import AppSidebar from '../../components/AppSidebar/AppSidebar';
+import { API_BASE_URL, buildAuthHeaders } from '../../constants/apiConfig';
 import './GreenComputingPage.css';
 
-// Base models with Carbon estimates (gCO2eq)
-const AI_MODELS = {
+type RegionKey = 'us-west' | 'us-east' | 'eu-north' | 'ap-south';
+
+interface ModelProfile {
+  name: string;
+  carbonPerRun: number;
+  category: string;
+}
+
+interface RegionProfile {
+  name: string;
+  multiplier: number;
+}
+
+const DEFAULT_MODEL_PROFILES: Record<string, ModelProfile> = {
   'llama-3-8b': { name: 'Llama 3 8B', carbonPerRun: 0.15, category: 'efficient' },
   'mistral-7b': { name: 'Mistral 7B', carbonPerRun: 0.13, category: 'efficient' },
   'mixtral-8x7b': { name: 'Mixtral 8x7B', carbonPerRun: 0.85, category: 'heavy' },
-  'gpt-4': { name: 'GPT-4 (Est)', carbonPerRun: 2.50, category: 'heavy' }
+  'gpt-4': { name: 'GPT-4', carbonPerRun: 2.50, category: 'heavy' },
 };
 
-const CLOUD_REGIONS = {
-  'us-west': { name: 'US West (Oregon) - Green Energy', multiplier: 0.4 },
+const DEFAULT_REGION_PROFILES: Record<RegionKey, RegionProfile> = {
+  'us-west': { name: 'US West (Oregon)', multiplier: 0.4 },
   'us-east': { name: 'US East (N. Virginia)', multiplier: 1.0 },
-  'eu-north': { name: 'EU North (Stockholm) - Hydro', multiplier: 0.15 },
-  'ap-south': { name: 'AP South (Mumbai)', multiplier: 1.8 }
+  'eu-north': { name: 'EU North (Stockholm)', multiplier: 0.15 },
+  'ap-south': { name: 'AP South (Mumbai)', multiplier: 1.8 },
 };
+
+interface GreenMetricsResponse {
+  lastUpdatedAt?: string;
+  totalQueries?: number;
+  projectedAnnualQueries?: number;
+  totalCarbonG?: number;
+  avgCarbonPerQueryG?: number;
+  totalTokens?: number;
+  avgTokensPerQuery?: number;
+  avgLatencyMs?: number;
+  totalSourcesRetrieved?: number;
+  avgTrustScore?: number;
+  modelUsage?: Record<string, number>;
+  providerUsage?: Record<string, number>;
+  profiles?: {
+    models?: Record<string, ModelProfile>;
+    regions?: Partial<Record<RegionKey, RegionProfile>>;
+    batchingReduction?: number;
+    hardwareEmbodiedG?: number;
+    baselineModelKey?: string;
+    baselineRegionKey?: RegionKey;
+    defaultModelKey?: string;
+    defaultRegionKey?: RegionKey;
+  };
+}
 
 interface GreenComputingPageProps {
   darkMode: boolean;
@@ -56,14 +94,14 @@ const AnimatedCounter: React.FC<{ value: number; decimals?: number; className?: 
 const geoUrl = "https://unpkg.com/world-atlas@2.0.2/countries-110m.json";
 
 const MAP_PINS: Array<{
-  key: keyof typeof CLOUD_REGIONS;
+  key: RegionKey;
   coordinates: [number, number];
-  label: string; sub: string; mult: number;
+  label: string;
 }> = [
-  { key: 'eu-north', coordinates: [18.0686, 59.3293],  label: 'EU North', sub: 'Stockholm · 0.15×', mult: 0.15 },
-  { key: 'us-west',  coordinates: [-120.5, 43.8],      label: 'US West',  sub: 'Oregon · 0.4×',     mult: 0.4  },
-  { key: 'us-east',  coordinates: [-78.1, 38.0],       label: 'US East',  sub: 'N. Virginia · 1.0×', mult: 1.0 },
-  { key: 'ap-south', coordinates: [72.8777, 19.0760],  label: 'AP South', sub: 'Mumbai · 1.8×',      mult: 1.8  },
+  { key: 'eu-north', coordinates: [18.0686, 59.3293],  label: 'EU North' },
+  { key: 'us-west',  coordinates: [-120.5, 43.8],      label: 'US West' },
+  { key: 'us-east',  coordinates: [-78.1, 38.0],       label: 'US East' },
+  { key: 'ap-south', coordinates: [72.8777, 19.0760],  label: 'AP South' },
 ];
 
 const pinColor = (mult: number) => {
@@ -73,9 +111,10 @@ const pinColor = (mult: number) => {
 };
 
 const WorldMapHero: React.FC<{
-  selectedRegion: keyof typeof CLOUD_REGIONS;
-  onSelect: (r: keyof typeof CLOUD_REGIONS) => void;
-}> = ({ selectedRegion, onSelect }) => {
+  selectedRegion: RegionKey;
+  onSelect: (r: RegionKey) => void;
+  regions: Record<RegionKey, RegionProfile>;
+}> = ({ selectedRegion, onSelect, regions }) => {
   const [hovered, setHovered] = React.useState<string | null>(null);
 
   return (
@@ -114,7 +153,9 @@ const WorldMapHero: React.FC<{
           {MAP_PINS.map((pin) => {
             const isSelected = selectedRegion === pin.key;
             const isHovered = hovered === pin.key;
-            const col = pinColor(pin.mult);
+            const region = regions[pin.key];
+            const regionMultiplier = region?.multiplier ?? 1.0;
+            const col = pinColor(regionMultiplier);
             return (
               <Marker 
                 key={pin.key} 
@@ -140,7 +181,7 @@ const WorldMapHero: React.FC<{
                   <g transform={pin.key === 'eu-north' ? "translate(0, 48)" : "translate(0, -28)"}>
                     <rect x="-60" y="-38" width="120" height="42" rx="6" fill="rgba(8, 20, 42, 0.95)" stroke={col} strokeWidth="1.5" />
                     <text textAnchor="middle" y="-18" fontSize="13" fill="#fff" fontWeight="bold" fontFamily="system-ui, sans-serif">{pin.label}</text>
-                    <text textAnchor="middle" y="-2" fontSize="11" fill={col} fontFamily="system-ui, sans-serif">{pin.sub}</text>
+                    <text textAnchor="middle" y="-2" fontSize="11" fill={col} fontFamily="system-ui, sans-serif">{region?.name ?? pin.label} · {regionMultiplier}×</text>
                     <polygon points={pin.key === 'eu-north' ? "-6,-42 6,-42 0,-49" : "-6,4 6,4 0,11"} fill={col} />
                   </g>
                 )}
@@ -154,7 +195,9 @@ const WorldMapHero: React.FC<{
     
         <div className="map-legend map-hero-legend">
           {MAP_PINS.map(pin => {
-            const col = pinColor(pin.mult);
+            const region = regions[pin.key];
+            const regionMultiplier = region?.multiplier ?? 1.0;
+            const col = pinColor(regionMultiplier);
             return (
               <button
                 key={pin.key}
@@ -164,7 +207,7 @@ const WorldMapHero: React.FC<{
               >
                 <span className="map-legend-dot" style={{ background: col, boxShadow: `0 0 8px ${col}80`, width: '10px', height: '10px', borderRadius: '50%', display: 'inline-block' }} />
                 <span className="map-legend-name" style={{marginLeft: '8px'}}>{pin.label}</span>
-                <span className="map-legend-mult" style={{ color: col }}>{pin.mult}×</span>
+                <span className="map-legend-mult" style={{ color: col }}>{regionMultiplier}×</span>
               </button>
             );
           })}
@@ -202,54 +245,96 @@ const RotatingEquivalent: React.FC<{ savedKg: number }> = ({ savedKg }) => {
 const GreenComputingPage: React.FC<GreenComputingPageProps> = ({ darkMode, toggleDarkMode }) => {
   const navigate = useNavigate();
 
-  // Backend tracking state
-  const [totalBackendCarbon, setTotalBackendCarbon] = useState<number>(0);
-  const [dbRunCount, setDbRunCount] = useState<number>(0);
+  const [liveMetrics, setLiveMetrics] = useState<GreenMetricsResponse>({});
+  const [modelProfiles, setModelProfiles] = useState<Record<string, ModelProfile>>(DEFAULT_MODEL_PROFILES);
+  const [regionProfiles, setRegionProfiles] = useState<Record<RegionKey, RegionProfile>>(DEFAULT_REGION_PROFILES);
 
   // User Interactive Toggles for Presentation
-  const [selectedModel, setSelectedModel] = useState<keyof typeof AI_MODELS>('gpt-4');
-  const [selectedRegion, setSelectedRegion] = useState<keyof typeof CLOUD_REGIONS>('us-east');
+  const [selectedModel, setSelectedModel] = useState<string>('gpt-4');
+  const [selectedRegion, setSelectedRegion] = useState<RegionKey>('us-east');
   const [hardwareLifespan, setHardwareLifespan] = useState<number>(3);
-  const [scaleFactor, setScaleFactor] = useState<number>(500);
   const [batchingEnabled, setBatchingEnabled] = useState<boolean>(false);
 
-  // Fetch true backend numbers (falls back smoothly if unavail)
+  // Fetch live dashboard data and keep it fresh.
   useEffect(() => {
-    const fetchRunData = async () => {
+    let cancelled = false;
+
+    const fetchGreenMetrics = async () => {
       try {
-        const res = await fetch('/api/runs?limit=1000');
+        const res = await fetch(`${API_BASE_URL}/api/dashboard/green-computing`, {
+          headers: buildAuthHeaders(),
+          credentials: 'include',
+        });
         if (res.ok) {
-          const data = await res.json();
-          const runs = data.items || [];
-          setDbRunCount(runs.length > 0 ? runs.length : data.total || 0);
-          const totalCarbon = runs.reduce((sum: number, run: any) => sum + (run.carbonG || 0.3), 0);
-          setTotalBackendCarbon(totalCarbon);
-        } else {
-          setTotalBackendCarbon(45.5);
-          setDbRunCount(350);
+          const data = (await res.json()) as GreenMetricsResponse;
+          if (cancelled) return;
+
+          setLiveMetrics(data);
+
+          if (data.profiles?.models && Object.keys(data.profiles.models).length > 0) {
+            setModelProfiles(data.profiles.models);
+          }
+
+          if (data.profiles?.regions) {
+            setRegionProfiles((prev) => ({
+              ...prev,
+              ...(data.profiles?.regions as Partial<Record<RegionKey, RegionProfile>>),
+            }));
+          }
+
+          const defaultModel = data.profiles?.defaultModelKey;
+          if (defaultModel && data.profiles?.models?.[defaultModel]) {
+            setSelectedModel((current) => (data.profiles?.models?.[current] ? current : defaultModel));
+          }
+
+          const defaultRegion = data.profiles?.defaultRegionKey;
+          if (defaultRegion && data.profiles?.regions?.[defaultRegion]) {
+            setSelectedRegion(defaultRegion);
+          }
         }
-      } catch (e) {
-        setTotalBackendCarbon(45.5);
-        setDbRunCount(350);
+      } catch {
+        // Preserve existing values if refresh fails.
       }
     };
-    fetchRunData();
+
+    void fetchGreenMetrics();
+    const interval = window.setInterval(() => {
+      void fetchGreenMetrics();
+    }, 30_000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
   }, []);
 
-  // Use either actual DB base (if significant) or static demo values, scaled by slider
-  const simulatedRunCount = Math.max(dbRunCount, 50) * scaleFactor;
+  const batchingReduction = liveMetrics.profiles?.batchingReduction ?? 0.35;
+  const hardwareEmbodiedG = liveMetrics.profiles?.hardwareEmbodiedG ?? 150000;
+  const baselineModelKey = liveMetrics.profiles?.baselineModelKey ?? 'gpt-4';
+  const baselineRegionKey = liveMetrics.profiles?.baselineRegionKey ?? 'ap-south';
+
+  const selectedModelProfile = modelProfiles[selectedModel] ?? modelProfiles[baselineModelKey] ?? Object.values(modelProfiles)[0];
+  const baselineModelProfile = modelProfiles[baselineModelKey] ?? selectedModelProfile;
+
+  const selectedRegionProfile = regionProfiles[selectedRegion] ?? regionProfiles['us-east'];
+  const baselineRegionProfile = regionProfiles[baselineRegionKey] ?? regionProfiles['ap-south'];
+
+  const annualQueries = Math.max(
+    Number(liveMetrics.projectedAnnualQueries ?? 0),
+    Number(liveMetrics.totalQueries ?? 0),
+  );
 
   // Calculators for unoptimized vs optimized.
   const calcUnoptimized = () => {
-    const usage = simulatedRunCount * AI_MODELS['gpt-4'].carbonPerRun * CLOUD_REGIONS['ap-south'].multiplier;
-    const hardware = (150000 / 3);
+    const usage = annualQueries * baselineModelProfile.carbonPerRun * baselineRegionProfile.multiplier;
+    const hardware = (hardwareEmbodiedG / 3);
     return usage + hardware;
   };
 
   const calcOptimized = () => {
-    let usage = simulatedRunCount * AI_MODELS[selectedModel].carbonPerRun * CLOUD_REGIONS[selectedRegion].multiplier;
-    if (batchingEnabled) usage *= 0.65;
-    const hardware = (150000 / hardwareLifespan);
+    let usage = annualQueries * selectedModelProfile.carbonPerRun * selectedRegionProfile.multiplier;
+    if (batchingEnabled) usage *= (1 - batchingReduction);
+    const hardware = (hardwareEmbodiedG / hardwareLifespan);
     return usage + hardware;
   };
 
@@ -267,9 +352,9 @@ const GreenComputingPage: React.FC<GreenComputingPageProps> = ({ darkMode, toggl
   const ringDeg = (percentSaved / 100) * 360;
   const ringBg = `conic-gradient(var(--accent-green, #10b981) 0deg ${ringDeg}deg, var(--border-light) ${ringDeg}deg 360deg)`;
 
-  const co2PerQuery = AI_MODELS[selectedModel].carbonPerRun
-    * CLOUD_REGIONS[selectedRegion].multiplier
-    * (batchingEnabled ? 0.65 : 1);
+  const co2PerQuery = selectedModelProfile.carbonPerRun
+    * selectedRegionProfile.multiplier
+    * (batchingEnabled ? (1 - batchingReduction) : 1);
 
   return (
     <div className="green-page">
@@ -335,7 +420,7 @@ const GreenComputingPage: React.FC<GreenComputingPageProps> = ({ darkMode, toggl
           <div className="sb-col sb-col-right">
             <div className="sb-stats-row">
               <div className="sb-stat">
-                <span className="sb-stat-val">{simulatedRunCount.toLocaleString()}</span>
+                <span className="sb-stat-val">{annualQueries.toLocaleString()}</span>
                 <span className="sb-stat-label">Queries / yr</span>
               </div>
               <div className="sb-stat-divider" />
@@ -385,7 +470,7 @@ const GreenComputingPage: React.FC<GreenComputingPageProps> = ({ darkMode, toggl
                 <p className="module-desc">Choose models strategically — smaller models use vastly less energy.</p>
               </div>
               <span className="module-live-chip module-live-chip-emerald">
-                {(simulatedRunCount * AI_MODELS[selectedModel].carbonPerRun * CLOUD_REGIONS[selectedRegion].multiplier / 1000).toFixed(1)}kg/yr
+                {(annualQueries * selectedModelProfile.carbonPerRun * selectedRegionProfile.multiplier / 1000).toFixed(1)}kg/yr
               </span>
             </div>
 
@@ -422,11 +507,11 @@ const GreenComputingPage: React.FC<GreenComputingPageProps> = ({ darkMode, toggl
 
               <div className="module-stat-row">
                 <div className="module-stat-box">
-                  <span className="module-stat-val">{simulatedRunCount.toLocaleString()}</span>
+                  <span className="module-stat-val">{annualQueries.toLocaleString()}</span>
                   <span className="module-stat-label">Annual queries</span>
                 </div>
                 <div className="module-stat-box">
-                  <span className="module-stat-val">{AI_MODELS[selectedModel].carbonPerRun}g</span>
+                  <span className="module-stat-val">{selectedModelProfile.carbonPerRun}g</span>
                   <span className="module-stat-label">CO₂ per run</span>
                 </div>
               </div>
@@ -434,7 +519,7 @@ const GreenComputingPage: React.FC<GreenComputingPageProps> = ({ darkMode, toggl
 
             <details className="module-methodology">
               <summary>How we calculate this</summary>
-              <p>Carbon per query sourced from ML CO₂ Impact calculator benchmarks. Scaled to {simulatedRunCount.toLocaleString()} annual queries based on live backend usage data.</p>
+              <p>Carbon per query is projected with model intensity profiles and applied to {annualQueries.toLocaleString()} annual queries from live dashboard activity.</p>
             </details>
           </div>
 
@@ -448,7 +533,7 @@ const GreenComputingPage: React.FC<GreenComputingPageProps> = ({ darkMode, toggl
                 <p className="module-desc">Datacenter energy sources vary wildly by region.</p>
               </div>
               <span className="module-live-chip module-live-chip-teal">
-                {CLOUD_REGIONS[selectedRegion].multiplier}× grid
+                {selectedRegionProfile.multiplier}× grid
               </span>
             </div>
 
@@ -456,7 +541,7 @@ const GreenComputingPage: React.FC<GreenComputingPageProps> = ({ darkMode, toggl
               <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '14px 16px', background: 'var(--glass-bg-secondary, var(--bg-light))', borderRadius: '8px', border: '1px solid var(--border-light)', marginBottom: '4px' }}>
                   <Cloud size={24} style={{ color: '#0d9488' }} />
                   <div>
-                    <span style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: 'var(--text-dark)' }}>{CLOUD_REGIONS[selectedRegion].name}</span>
+                    <span style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: 'var(--text-dark)' }}>{selectedRegionProfile.name}</span>
                     <span style={{ display: 'block', fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>Region configured via interactive map below</span>
                   </div>
                 </div>
@@ -520,7 +605,7 @@ const GreenComputingPage: React.FC<GreenComputingPageProps> = ({ darkMode, toggl
                 <Zap size={14} className="callout-icon" />
                 <span>
                   At <strong>{hardwareLifespan} years</strong>: saves{' '}
-                  <strong>{((150000 / 3 - 150000 / hardwareLifespan) / 1000).toFixed(1)}kg</strong>{' '}
+                  <strong>{((hardwareEmbodiedG / 3 - hardwareEmbodiedG / hardwareLifespan) / 1000).toFixed(1)}kg</strong>{' '}
                   vs 3-year refresh cycle
                 </span>
               </div>
@@ -540,11 +625,11 @@ const GreenComputingPage: React.FC<GreenComputingPageProps> = ({ darkMode, toggl
 
               <div className="module-stat-row" style={{ marginTop: 12 }}>
                 <div className="module-stat-box">
-                  <span className="module-stat-val">{(150000 / hardwareLifespan / 1000).toFixed(1)}kg</span>
+                  <span className="module-stat-val">{(hardwareEmbodiedG / hardwareLifespan / 1000).toFixed(1)}kg</span>
                   <span className="module-stat-label">Yearly hardware CO₂</span>
                 </div>
                 <div className="module-stat-box">
-                  <span className="module-stat-val">{((150000 / 3 - 150000 / hardwareLifespan) / 1000).toFixed(1)}kg</span>
+                  <span className="module-stat-val">{((hardwareEmbodiedG / 3 - hardwareEmbodiedG / hardwareLifespan) / 1000).toFixed(1)}kg</span>
                   <span className="module-stat-label">Saved vs 3yr</span>
                 </div>
               </div>
@@ -552,7 +637,7 @@ const GreenComputingPage: React.FC<GreenComputingPageProps> = ({ darkMode, toggl
 
             <details className="module-methodology">
               <summary>How we calculate this</summary>
-              <p>Embodied manufacturing emissions estimated at 150,000g CO₂eq per server rack, amortised linearly over lifespan. Source: Green IT industry benchmarks (Greenly, 2022).</p>
+              <p>Embodied manufacturing emissions estimated at {hardwareEmbodiedG.toLocaleString()}g CO₂eq per server rack, amortised linearly over lifespan. Source: Green IT industry benchmarks (Greenly, 2022).</p>
             </details>
           </div>
 
@@ -594,7 +679,7 @@ const GreenComputingPage: React.FC<GreenComputingPageProps> = ({ darkMode, toggl
       
 
         {/* ── Global Cloud Infrastructure Map ─── */}
-        <WorldMapHero selectedRegion={selectedRegion} onSelect={setSelectedRegion} />
+        <WorldMapHero selectedRegion={selectedRegion} onSelect={setSelectedRegion} regions={regionProfiles} />
 
         
         </main>

@@ -108,6 +108,24 @@
   background: var(--bg-light);
 }
 
+.history-save-btn {
+  border-color: #86efac;
+  color: #166534;
+  background: #f0fdf4;
+}
+
+.history-save-btn:hover {
+  background: #dcfce7;
+}
+
+.history-action-message {
+  margin-top: -8px;
+  margin-bottom: 2px;
+  font-size: 13px;
+  color: #2563eb;
+  font-weight: 500;
+}
+
 /* ─── KPI Strip ──────────────────────────────────────────────────────────────── */
 
 .arch-kpi-strip {
@@ -295,6 +313,33 @@
   background: var(--bg-light);
   border-color: #bfdbfe;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+}
+
+.case-row--selected {
+  border-color: #60a5fa;
+  background: #eff6ff;
+}
+
+.case-select-toggle {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  border: 1px solid var(--border-light);
+  background: var(--card-bg);
+  color: transparent;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.case-select-toggle.selected {
+  background: #2563eb;
+  border-color: #1d4ed8;
+  color: #ffffff;
 }
 
 .case-type-icon {

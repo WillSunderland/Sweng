@@ -3,7 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import propylonLogo from '../../assets/propylon_logo.svg';
 import ThemeToggle from '../ThemeToggle/ThemeToggle';
 import '../../components/AppSidebar/SharedSidebar.css';
-import { getCurrentUserDisplayName, hydrateCurrentUserDisplayName } from '../../lib/userSession';
+import { API_BASE_URL, buildAuthHeaders } from '../../constants/apiConfig';
+import { USER_DISPLAY_NAME_KEY, getCurrentUserDisplayName, hydrateCurrentUserDisplayName } from '../../lib/userSession';
 
 export type SidebarActiveItem = 'workspace' | 'archive' | 'assistant' | 'green';
 
@@ -16,6 +17,7 @@ interface AppSidebarProps {
 const AppSidebar: React.FC<AppSidebarProps> = ({ activeItem, darkMode = false, toggleDarkMode }) => {
   const navigate = useNavigate();
   const [userName, setUserName] = useState(getCurrentUserDisplayName());
+  const [showUserMenu, setShowUserMenu] = useState(false);
   const avatarSeed = userName.replace(/\s+/g, '-');
 
   useEffect(() => {
@@ -23,6 +25,23 @@ const AppSidebar: React.FC<AppSidebarProps> = ({ activeItem, darkMode = false, t
       setUserName(getCurrentUserDisplayName());
     }).catch(() => {});
   }, []);
+
+  const handleSignOut = async (): Promise<void> => {
+    try {
+      await fetch(`${API_BASE_URL}/api/auth/logout/`, {
+        method: 'POST',
+        headers: buildAuthHeaders(),
+        credentials: 'include',
+      });
+    } catch {
+      // Continue local sign-out even if API call fails.
+    }
+
+    localStorage.removeItem('token');
+    localStorage.removeItem(USER_DISPLAY_NAME_KEY);
+    setShowUserMenu(false);
+    navigate('/login');
+  };
 
   return (
     <aside className="ai-sidebar">
@@ -135,17 +154,33 @@ const AppSidebar: React.FC<AppSidebarProps> = ({ activeItem, darkMode = false, t
           <ThemeToggle darkMode={darkMode} toggle={toggleDarkMode} />
         )}
 
-        <div className="sidebar-user">
-          <div className="sidebar-user-avatar">
-            <img
-              src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(avatarSeed)}&backgroundColor=b6e3f4`}
-              alt={userName}
-            />
-          </div>
-          <div className="sidebar-user-info">
-            <span className="sidebar-user-name">{userName}</span>
-            <span className="sidebar-user-role">Legal Professional</span>
-          </div>
+        <div className="sidebar-user-wrap">
+          <button
+            type="button"
+            className="sidebar-user"
+            onClick={() => setShowUserMenu((prev) => !prev)}
+            aria-haspopup="true"
+            aria-expanded={showUserMenu}
+          >
+            <div className="sidebar-user-avatar">
+              <img
+                src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(avatarSeed)}&backgroundColor=b6e3f4`}
+                alt={userName}
+              />
+            </div>
+            <div className="sidebar-user-info">
+              <span className="sidebar-user-name">{userName}</span>
+              <span className="sidebar-user-role">Legal Professional</span>
+            </div>
+          </button>
+
+          {showUserMenu && (
+            <div className="sidebar-user-menu">
+              <button type="button" className="sidebar-user-menu-btn" onClick={handleSignOut}>
+                Sign out
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </aside>

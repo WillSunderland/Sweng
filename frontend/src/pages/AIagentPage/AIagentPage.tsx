@@ -3,8 +3,8 @@ import { useNavigate, NavLink } from 'react-router-dom';
 import propylonLogo from '../../assets/propylon_logo.svg';
 import './AIagentPage.css';
 import { Brain, Search, BookOpen, CheckCircle2, Leaf, Paperclip, Cpu, Sparkles, AlertCircle, ImagePlus, Mic, MicOff, Settings2 } from 'lucide-react';
-import { API_BASE_URL, POLL_INTERVAL_MS, POLL_TIMEOUT_MS, buildAuthHeaders, getAuthToken } from '../../constants/apiConfig';
-import { getCurrentUserAvatarSeed, getCurrentUserDisplayName, hydrateCurrentUserDisplayName } from '../../lib/userSession';
+import { API_BASE_URL, POLL_INTERVAL_MS, POLL_TIMEOUT_MS, buildAuthHeaders } from '../../constants/apiConfig';
+import { USER_DISPLAY_NAME_KEY, getCurrentUserAvatarSeed, getCurrentUserDisplayName, hydrateCurrentUserDisplayName } from '../../lib/userSession';
 
 import ThemeToggle from '../../components/ThemeToggle/ThemeToggle';
 
@@ -1002,6 +1002,7 @@ const AIagentPage: React.FC<{ darkMode?: boolean; toggleDarkMode?: () => void }>
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const [showSettingsMenu, setShowSettingsMenu] = useState(false);
+  const [showUserMenu, setShowUserMenu] = useState(false);
   const [attachments, setAttachments] = useState<File[]>([]);
   const [isListening, setIsListening] = useState(false);
 
@@ -1133,6 +1134,23 @@ const AIagentPage: React.FC<{ darkMode?: boolean; toggleDarkMode?: () => void }>
     setPreviewCitation(null);
     setShowSettingsMenu(false);
   }, []);
+
+  const handleSignOut = useCallback(async () => {
+    try {
+      await fetch(`${API_BASE_URL}/api/auth/logout/`, {
+        method: 'POST',
+        headers: buildAuthHeaders(),
+        credentials: 'include',
+      });
+    } catch {
+      // Continue local sign-out even if API call fails.
+    }
+
+    localStorage.removeItem('token');
+    localStorage.removeItem(USER_DISPLAY_NAME_KEY);
+    setShowUserMenu(false);
+    navigate('/login');
+  }, [navigate]);
 
   const handleSend = useCallback(async (text?: string): Promise<void> => {
     const messageText = (text ?? input).trim();
@@ -1324,17 +1342,33 @@ const AIagentPage: React.FC<{ darkMode?: boolean; toggleDarkMode?: () => void }>
           {toggleDarkMode && (
             <ThemeToggle darkMode={!!darkMode} toggle={toggleDarkMode} />
           )}
-          <div className="sidebar-user">
-            <div className="sidebar-user-avatar">
-              <img
-                src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(getCurrentUserAvatarSeed())}&backgroundColor=b6e3f4`}
-                alt={userName}
-              />
-            </div>
-            <div className="sidebar-user-info">
-              <span className="sidebar-user-name">{userName}</span>
-              <span className="sidebar-user-role">Legal Professional</span>
-            </div>
+          <div className="sidebar-user-wrap">
+            <button
+              type="button"
+              className="sidebar-user"
+              onClick={() => setShowUserMenu((prev) => !prev)}
+              aria-haspopup="true"
+              aria-expanded={showUserMenu}
+            >
+              <div className="sidebar-user-avatar">
+                <img
+                  src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(getCurrentUserAvatarSeed())}&backgroundColor=b6e3f4`}
+                  alt={userName}
+                />
+              </div>
+              <div className="sidebar-user-info">
+                <span className="sidebar-user-name">{userName}</span>
+                <span className="sidebar-user-role">Legal Professional</span>
+              </div>
+            </button>
+
+            {showUserMenu && (
+              <div className="sidebar-user-menu">
+                <button type="button" className="sidebar-user-menu-btn" onClick={handleSignOut}>
+                  Sign out
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </aside>

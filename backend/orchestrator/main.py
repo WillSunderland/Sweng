@@ -60,6 +60,25 @@ DEFAULT_CARBON_G = 0.3
 VALID_PRIORITIES = {"high", "medium", "low"}
 PRIORITY_ORDER = {"high": 0, "medium": 1, "low": 2}
 
+GREEN_MODEL_PROFILES: dict[str, dict[str, float | str]] = {
+    "llama-3-8b": {"name": "Llama 3 8B", "carbonPerRun": 0.15, "category": "efficient"},
+    "mistral-7b": {"name": "Mistral 7B", "carbonPerRun": 0.13, "category": "efficient"},
+    "mixtral-8x7b": {"name": "Mixtral 8x7B", "carbonPerRun": 0.85, "category": "heavy"},
+    "gpt-4": {"name": "GPT-4", "carbonPerRun": 2.50, "category": "heavy"},
+}
+
+GREEN_REGION_PROFILES: dict[str, dict[str, float | str]] = {
+    "us-west": {"name": "US West (Oregon)", "multiplier": 0.4},
+    "us-east": {"name": "US East (N. Virginia)", "multiplier": 1.0},
+    "eu-north": {"name": "EU North (Stockholm)", "multiplier": 0.15},
+    "ap-south": {"name": "AP South (Mumbai)", "multiplier": 1.8},
+}
+
+GREEN_BATCHING_REDUCTION = 0.35
+GREEN_HARDWARE_EMBODIED_G = 150000.0
+GREEN_BASELINE_MODEL_KEY = "gpt-4"
+GREEN_BASELINE_REGION_KEY = "ap-south"
+
 RUN_STORE: dict[str, dict] = {}
 SOURCE_STORE: dict[str, dict] = {}
 SESSION_STORE: dict[str, list[dict]] = {}
@@ -174,6 +193,15 @@ def _compute_trust_score(result: dict, source_count: int) -> float:
     trust = trust - hallucination_penalty - coverage_penalty - citation_presence_penalty - retrieval_penalty
     trust = max(0.0, min(trust, 0.99))
     return round(trust, 3)
+
+
+def _parse_iso_datetime(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
 
 
 def _store_sources(run_id: str, sources: list[SourceInfo | dict]) -> None:
@@ -789,4 +817,91 @@ async def ai_efficiency(current_user: OptionalCurrentUser = None):
         "totalQueries": user_run_count,
         "modelUsage": model_usage,
         "providerUsage": provider_usage,
+    }
+
+
+@app.get("/api/dashboard/green-computing")
+async def green_computing(current_user: OptionalCurrentUser = None):
+    user_id = _resolve_user_id(current_user)
+    user_runs: list[tuple[str, dict]] = [
+        (run_id, run)
+        for run_id, run in RUN_STORE.items()
+        if run.get("user_id") == user_id
+    ]
+
+    total_queries = len(user_runs)
+    total_carbon_g = 0.0
+    total_tokens = 0
+    total_latency_ms = 0
+    latency_count = 0
+    total_sources = 0
+    trust_scores: list[float] = []
+    model_usage: dict[str, int] = {}
+    provider_usage: dict[str, int] = {}
+    created_timestamps: list[datetime] = []
+
+    for run_id, run in user_runs:
+        result = run.get("result", {})
+        carbon_tons = float(result.get("carbonCountInTons", 0.0))
+        total_carbon_g += tons_to_grams(carbon_tons) if carbon_tons else 0.0
+
+        token_count = int(result.get("token_count", 0) or 0)
+        total_tokens += token_count
+
+        latency_ms = result.get("latency_ms") or run.get("latency_ms")
+        if isinstance(latency_ms, (int, float)):
+            total_latency_ms += int(latency_ms)
+            latency_count += 1
+
+        source_count = len([k for k in SOURCE_STORE if k.startswith(f"{run_id}_src_")])
+        total_sources += source_count
+        trust_scores.append(_compute_trust_score(result, source_count))
+
+        model = result.get("model_used")
+        provider = result.get("provider")
+        if model:
+            model_usage[model] = model_usage.get(model, 0) + 1
+        if provider:
+            provider_usage[provider] = provider_usage.get(provider, 0) + 1
+
+        created_dt = _parse_iso_datetime(run.get("createdAt"))
+        if created_dt:
+            created_timestamps.append(created_dt)
+
+    now = datetime.now(timezone.utc)
+    if created_timestamps:
+        earliest = min(created_timestamps)
+        active_days = max((now - earliest).total_seconds() / 86400.0, 1.0)
+        queries_per_day = total_queries / active_days
+        projected_annual_queries = int(round(queries_per_day * 365.0))
+    else:
+        projected_annual_queries = 0
+
+    n = max(total_queries, 1)
+    avg_latency_ms = int(round(total_latency_ms / latency_count)) if latency_count else 0
+    avg_trust_score = round(sum(trust_scores) / len(trust_scores), 3) if trust_scores else 0.0
+
+    return {
+        "lastUpdatedAt": get_iso_timestamp(),
+        "totalQueries": total_queries,
+        "projectedAnnualQueries": projected_annual_queries,
+        "totalCarbonG": round(total_carbon_g, 3),
+        "avgCarbonPerQueryG": round(total_carbon_g / n, 4),
+        "totalTokens": total_tokens,
+        "avgTokensPerQuery": int(total_tokens / n),
+        "avgLatencyMs": avg_latency_ms,
+        "totalSourcesRetrieved": total_sources,
+        "avgTrustScore": avg_trust_score,
+        "modelUsage": model_usage,
+        "providerUsage": provider_usage,
+        "profiles": {
+            "models": GREEN_MODEL_PROFILES,
+            "regions": GREEN_REGION_PROFILES,
+            "batchingReduction": GREEN_BATCHING_REDUCTION,
+            "hardwareEmbodiedG": GREEN_HARDWARE_EMBODIED_G,
+            "baselineModelKey": GREEN_BASELINE_MODEL_KEY,
+            "baselineRegionKey": GREEN_BASELINE_REGION_KEY,
+            "defaultModelKey": GREEN_BASELINE_MODEL_KEY,
+            "defaultRegionKey": "us-east",
+        },
     }
