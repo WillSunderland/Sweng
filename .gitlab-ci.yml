@@ -9,6 +9,7 @@ stages:
 github-sync:
   stage: sync
   image: alpine/git:2.45.2
+  allow_failure: true
   tags:
     - docker
   variables:
@@ -36,7 +37,10 @@ github-sync:
         git remote add github "$GITHUB_REMOTE_URL"
       fi
       git fetch origin --tags
-      git push github HEAD:refs/heads/main --tags
+      if ! git push github HEAD:refs/heads/main --tags; then
+        echo "GitHub sync failed, but this job is non-blocking."
+        exit 0
+      fi
 
 variables:
   PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
