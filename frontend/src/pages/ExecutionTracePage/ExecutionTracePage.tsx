@@ -169,7 +169,6 @@ const RunningStageCard: React.FC<{ step: TraceStep }> = ({ step }) => {
   const [thoughtIdx, setThoughtIdx] = useState(0);
   const [thoughtKey, setThoughtKey] = useState(0);
   const liveElapsed = useLiveTimer(true, step.elapsed ?? 0);
-          <RunningStageCard key="running-stage" step={runningStep} />
 
   useEffect(() => {
     if (thoughts.length <= 1) return;
@@ -536,7 +535,7 @@ const ExecutionTracePage: React.FC<ExecutionTracePageProps> = ({ darkMode, toggl
               {steps.map((step, i) => {
                 const isLast = i === steps.length - 1;
                 if (step.status === 'complete') return <CompletedStageCard key={step.id} step={step} index={i} />;
-                if (step.status === 'running') return <RunningStageCard key={step.id} step={step} index={i} />;
+                if (step.status === 'running') return <RunningStageCard key={step.id} step={step} />;
                 return <PendingStageCard key={step.id} step={step} index={i} isLast={isLast} />;
               })}
             </div>

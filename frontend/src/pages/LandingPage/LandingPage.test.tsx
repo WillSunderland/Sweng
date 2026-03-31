@@ -244,10 +244,15 @@ describe('LandingPage', () => {
     });
 
     it('navigates to /workspace on successful login', async () => {
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({ token: 'test-token' }),
-      } as Response);
+      mockFetch
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ token: 'test-token' }),
+        } as Response)
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ username: 'user@firm.com' }),
+        } as Response);
 
       renderPage();
       openLoginModal();
@@ -262,10 +267,15 @@ describe('LandingPage', () => {
     });
 
     it('closes the modal after a successful login', async () => {
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({ token: 'test-token' }),
-      } as Response);
+      mockFetch
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ token: 'test-token' }),
+        } as Response)
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ username: 'user@firm.com' }),
+        } as Response);
 
       renderPage();
       openLoginModal();
@@ -275,16 +285,21 @@ describe('LandingPage', () => {
       fireEvent.click(screen.getByRole('button', { name: /^sign in$/i }));
 
       await waitFor(() => {
-        expect(document.querySelectorAll('input[type="email"]')).toHaveLength(0);
+        expect(screen.queryByTestId('modal-panel')).not.toBeInTheDocument();
       });
     });
 
     it('stores the auth token in localStorage on successful login', async () => {
       const setItemSpy = vi.spyOn(Storage.prototype, 'setItem');
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({ token: 'jwt-abc-123' }),
-      } as Response);
+      mockFetch
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ token: 'jwt-abc-123' }),
+        } as Response)
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ username: 'user@firm.com' }),
+        } as Response);
 
       renderPage();
       openLoginModal();

@@ -16,6 +16,13 @@ vi.mock('react-router-dom', async () => {
   };
 });
 
+vi.mock('../../lib/userSession', () => ({
+  getCurrentUserAvatarSeed: () => 'Legal-Professional',
+  getCurrentUserDisplayName: () => 'Legal Professional',
+  hydrateCurrentUserDisplayName: vi.fn().mockResolvedValue(undefined),
+  USER_DISPLAY_NAME_KEY: 'currentUserDisplayName',
+}));
+
 // Mock fetch globally
 const mockFetch = vi.fn();
 
@@ -54,13 +61,23 @@ const mockPollRun = (answer = 'This is a test legal answer.') =>
 
 describe('AIagentPage', () => {
   beforeEach(() => {
-  vi.stubGlobal('fetch', mockFetch);
-  mockFetch.mockReset();
-  mockNavigate.mockClear();
-});
+    vi.stubGlobal('fetch', mockFetch);
+    vi.stubGlobal(
+      'EventSource',
+      class {
+        constructor() {
+          throw new Error('Stream unavailable in test');
+        }
+      }
+    );
+    mockFetch.mockReset();
+    mockNavigate.mockClear();
+    localStorage.clear();
+  });
 
   afterEach(() => {
     vi.clearAllMocks();
+    vi.unstubAllGlobals();
   });
 
   // ── Welcome / Empty State ──────────────────────────────────────────────────
@@ -68,7 +85,7 @@ describe('AIagentPage', () => {
   describe('Welcome State (no chat started)', () => {
     it('renders the welcome title', () => {
       renderPage();
-      expect(screen.getByText(/hi james, where should we start/i)).toBeInTheDocument();
+      expect(screen.getByText(/where should we start/i)).toBeInTheDocument();
     });
 
     it('renders the welcome subtitle', () => {
@@ -129,8 +146,7 @@ describe('AIagentPage', () => {
 
     it('renders the user info', () => {
       renderPage();
-      expect(screen.getByText('James Sterling')).toBeInTheDocument();
-      expect(screen.getByText('Senior Counsel')).toBeInTheDocument();
+      expect(screen.getAllByText('Legal Professional').length).toBeGreaterThan(0);
     });
 
     it('renders the New Research Case button', () => {
@@ -191,7 +207,10 @@ describe('AIagentPage', () => {
       const input = screen.getByPlaceholderText(/ask a legal question/i);
       fireEvent.change(input, { target: { value: 'test query' } });
       fireEvent.keyDown(input, { key: 'Enter', shiftKey: true });
-      expect(mockFetch).not.toHaveBeenCalled();
+      expect(mockFetch).not.toHaveBeenCalledWith(
+        expect.stringMatching(/\/api\/runs$/),
+        expect.objectContaining({ method: 'POST' })
+      );
     });
   });
 
@@ -420,7 +439,11 @@ describe('AIagentPage', () => {
       fireEvent.click(screen.getByText('Regulatory Analysis'));
 
       await waitFor(() => {
-        const [url, options] = mockFetch.mock.calls[0] ?? [];
+        const runCall = mockFetch.mock.calls.find(([url, options]) =>
+          String(url).includes('/api/runs') && (options as { method?: string } | undefined)?.method === 'POST'
+        );
+        expect(runCall).toBeDefined();
+        const [url, options] = runCall ?? [];
         expect(String(url)).toMatch(/\/api\/runs$/);
         expect(options?.method).toBe('POST');
         expect(String(options?.body)).toMatch(/regulatory/i);
@@ -469,7 +492,7 @@ describe('AIagentPage', () => {
       renderPage();
       // The greeting is in the messages array but only rendered after hasStartedChat
       // so we just confirm it doesn't crash and the welcome state is shown
-      expect(screen.getByText(/hi james/i)).toBeInTheDocument();
+      expect(screen.getByText(/where should we start/i)).toBeInTheDocument();
     });
   });
 });
