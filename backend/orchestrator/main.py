@@ -190,7 +190,13 @@ def _compute_trust_score(result: dict, source_count: int) -> float:
 
     base = 0.3 if source_count == 0 else 0.5
     trust = base + (0.3 * citation_component) + (0.2 * source_component)
-    trust = trust - hallucination_penalty - coverage_penalty - citation_presence_penalty - retrieval_penalty
+    trust = (
+        trust
+        - hallucination_penalty
+        - coverage_penalty
+        - citation_presence_penalty
+        - retrieval_penalty
+    )
     trust = max(0.0, min(trust, 0.99))
     return round(trust, 3)
 
@@ -878,8 +884,12 @@ async def green_computing(current_user: OptionalCurrentUser = None):
         projected_annual_queries = 0
 
     n = max(total_queries, 1)
-    avg_latency_ms = int(round(total_latency_ms / latency_count)) if latency_count else 0
-    avg_trust_score = round(sum(trust_scores) / len(trust_scores), 3) if trust_scores else 0.0
+    avg_latency_ms = (
+        int(round(total_latency_ms / latency_count)) if latency_count else 0
+    )
+    avg_trust_score = (
+        round(sum(trust_scores) / len(trust_scores), 3) if trust_scores else 0.0
+    )
 
     return {
         "lastUpdatedAt": get_iso_timestamp(),

@@ -164,11 +164,12 @@ const CompletedStageCard: React.FC<{ step: TraceStep; index: number }> = ({ step
   );
 };
 
-const RunningStageCard: React.FC<{ step: TraceStep; index: number }> = ({ step, index }) => {
+const RunningStageCard: React.FC<{ step: TraceStep }> = ({ step }) => {
   const { Icon, color, thoughts } = STAGE_META[step.key];
   const [thoughtIdx, setThoughtIdx] = useState(0);
   const [thoughtKey, setThoughtKey] = useState(0);
   const liveElapsed = useLiveTimer(true, step.elapsed ?? 0);
+          <RunningStageCard key="running-stage" step={runningStep} />
 
   useEffect(() => {
     if (thoughts.length <= 1) return;

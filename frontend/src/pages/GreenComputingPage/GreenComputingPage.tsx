@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   ArrowLeft, Cloud, Cpu, Battery,
-  Activity, Smartphone, Car, TreePine, Zap, Plane, Lightbulb
+  Smartphone, Car, TreePine, Zap, Plane, Lightbulb
 } from 'lucide-react';
 import { ComposableMap, Geographies, Geography, Marker } from 'react-simple-maps';
 import AppSidebar from '../../components/AppSidebar/AppSidebar';

@@ -22,7 +22,6 @@ try:
     from orchestrator.api.constants.runConstants import (
         RUN_STATUS_RUNNING,
         RUN_STATUS_COMPLETED,
-        DEFAULT_TRUST_SCORE,
         DEFAULT_CARBON_G,
     )
 except ModuleNotFoundError:
@@ -38,7 +37,6 @@ except ModuleNotFoundError:
     from api.constants.runConstants import (
         RUN_STATUS_RUNNING,
         RUN_STATUS_COMPLETED,
-        DEFAULT_TRUST_SCORE,
         DEFAULT_CARBON_G,
     )
 

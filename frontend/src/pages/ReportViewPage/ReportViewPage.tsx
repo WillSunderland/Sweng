@@ -28,7 +28,7 @@ const ReportViewPage: React.FC<ReportViewPageProps> = ({ darkMode, toggleDarkMod
   const { id } = useParams();
   const [run, setRun] = useState<RunData | null>(null);
   const [loading, setLoading] = useState(true);
-  const [isShared, setIsShared] = useState(false);
+  const [isShared, setIsShared] = useState(() => (id ? isRunShared(id) : false));
 
   useEffect(() => {
     const token = localStorage.getItem('token');
@@ -39,10 +39,6 @@ const ReportViewPage: React.FC<ReportViewPageProps> = ({ darkMode, toggleDarkMod
       .then((data) => { if (data) setRun(data); })
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, [id]);
-
-  useEffect(() => {
-    if (id) setIsShared(isRunShared(id));
   }, [id]);
 
   const handleBack = () => {

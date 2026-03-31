@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Bell, Settings, TrendingUp, CheckCircle2, RefreshCw, FileText,
-  Leaf, Hash, Clock, ChevronRight, Activity,
+  Leaf, Hash, Clock,
 } from 'lucide-react';
 import AppSidebar from '../../components/AppSidebar/AppSidebar';
 import '../../components/AppSidebar/SharedSidebar.css';
@@ -387,9 +387,14 @@ const WorkspacePage: React.FC<WorkspacePageProps> = ({ darkMode, toggleDarkMode 
     } finally {
       setLoading(false);
     }
-  }, [currentPage, activeFilter, sortField, debouncedSearch, refreshSharedKey]);
+  }, [currentPage, activeFilter, sortField, debouncedSearch]);
 
   useEffect(() => { loadCases(); }, [loadCases]);
+  useEffect(() => {
+    if (refreshSharedKey !== 0) {
+      loadCases();
+    }
+  }, [refreshSharedKey, loadCases]);
 
   // ── Fetch sidebar widgets ──
   const loadWidgets = useCallback(async () => {
